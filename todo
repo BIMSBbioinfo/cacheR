@@ -1,4 +1,7 @@
 [] test for arguments
 [] test for files
 [] expand to output targets file
-[] 
+
+251125
+[x] use faster read-write function than RDS
+[x] save by default in ./cache folder

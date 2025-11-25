@@ -20,9 +20,23 @@
 #' @return A decorator object that can be combined with a function using
 #'   `%@%`, returning a cached version of that function.
 #' @export
-cacheFile <- function(inpath) decorator %@% function(f) {
+cacheFile <- function(
+    cache_dir = NULL,
+    backend = getOption("cacheR.backend", "rds")
+  ) decorator %@% function(f) {
 
-  library(digest)
+  if (is.null(cache_dir)) {
+      cache_dir <- cacheR_default_dir()
+  }else{
+    if(!file.exists(cache_dir))
+      stop("the designated cache_dir does not exist")
+  }
+  # possibly normalize the path
+  cache_dir <- normalizePath(cache_dir, mustWork = FALSE)
+
+
+
+  backend <- match.arg(backend, c("rds", "qs"))
 
   # capture formal arguments and body as in your original
   argnames <- head(as.list(args(as.list(environment())[[1]])), -1)
@@ -100,12 +114,12 @@ cacheFile <- function(inpath) decorator %@% function(f) {
     if (.load && file.exists(outfile)) {
       message(paste0(fname, ": Returning loaded data ..."))
       message(outfile)
-      readRDS(outfile)$dat
+      .cacheR_read(outfile)$dat
     } else {
       message(paste0(fname, ": Running function ..."))
       dat <- f(...)
 
-      saveRDS(list(dat = dat, args = .anames, body = .fbody), outfile)
+      .cacheR_write(list(dat = dat, args = .anames, body = .fbody), outfile)
       dat
     }
   }

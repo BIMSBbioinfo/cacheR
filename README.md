@@ -1,6 +1,3 @@
----
-output: github_document
----
 
 <!-- README.md is generated from README.Rmd. Please edit README.Rmd only. -->
 
@@ -50,12 +47,12 @@ outer(3)
 
 ```
 
-📝 Future Features
+## 📝 Future Features
 
-Automatic invalidation when function code changes
+- Automatic invalidation when function code changes
 
-Cache visualization (cacheTree_graph())
+- Cache visualization (cacheTree_graph())
 
-File-space management (TTL, LRU cleanup)
+- File-space management (TTL, LRU cleanup)
 
-Hashing improvements and deduplication
+- Hashing improvements and deduplication

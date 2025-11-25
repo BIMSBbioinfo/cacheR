@@ -283,3 +283,14 @@ cacheTree_changed_files <- function() {
   out
 }
 
+
+
+cacheR_default_dir <- function() {
+  d <- getOption("cacheR.dir", file.path(getwd(), ".cacheR"))
+
+  if (!dir.exists(d)) {
+    dir.create(d, recursive = TRUE, showWarnings = FALSE)
+  }
+
+  d
+}
