@@ -1,6 +1,11 @@
-#' Infix decorator operator.
-#' Left-hand side: a decorator object (class "decorator")
-#' Right-hand side: a function to decorate.
+#' Decorator application operator
+#'
+#' Applies a decorator returned by [cacheFile()] to a function.
+#'
+#' @param decorator A decorator object, such as that returned by [cacheFile()].
+#' @param fun A function to decorate.
+#'
+#' @return A new function with caching behavior.
 #' @export
 `%@%` <- function(decorator, f) {
   if (!is.function(f)) {
@@ -29,7 +34,7 @@
   # calls: list(decorator, f) plus possibly more if chained
   mc <- match.call(expand.dots = FALSE)
   decorator_calls <- as.list(mc)[-1L]  # drop the `%@%` symbol
-  
+
   # Patch delayed decorator.
   patched_calls <- attr(decorator, "calls", exact = TRUE)
   if (!is.null(patched_calls)) {
@@ -37,14 +42,14 @@
     # which is already represented in patched_calls.
     decorator_calls <- c(patched_calls, decorator_calls[-1L])
   }
-  
+
   # If RHS is itself a decorator, create a *combined* decorator lazily.
   if (inherits(f, "decorator")) {
     .delayed_decorate(decorator, f, decorator_calls)
   } else {
     # Actual decoration: apply decorator to f
     wrapped <- decorator(f)
-    
+
     # All but the last element of decorator_calls correspond to decorators,
     # last element is the function itself.
     prettify(
@@ -76,18 +81,18 @@ print.decorated <- function(x, useSource = TRUE, ...) {
     attr(bare, "decorators") <- NULL
     bare
   }
-  
+
   fun_def <- capture.output(
     print.function(bare_fun(x), useSource = useSource, ...)
   )
-  
+
   decorators <- attr(x, "decorators", exact = TRUE)
   if (!is.null(decorators)) {
     for (d in decorators) {
       cat(deparse(d), "%@%\n")
     }
   }
-  
+
   cat(fun_def, sep = "\n")
   invisible(x)
 }
@@ -104,7 +109,7 @@ prettify <- function(f, original, decorator_calls) {
   } else {
     attr(f, "srcref") <- attr(original, "srcref")
   }
-  
+
   attr(f, "decorators") <- decorator_calls
   class(f) <- unique(c("decorated", class(f)))
   f
@@ -121,7 +126,7 @@ pretty_code <- function(f) {
 #' @export
 .delayed_decorate <- function(d1, d2, decorator_calls) {
   stopifnot(inherits(d1, "decorator"), inherits(d2, "decorator"))
-  
+
   structure(
     decorator(function(f) d1(d2(f))),
     calls = decorator_calls

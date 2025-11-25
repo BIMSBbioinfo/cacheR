@@ -1,15 +1,26 @@
 Package: cacheR
-Title: What the Package Does (One Line, Title Case)
-Version: 0.0.0.9000
+Type: Package
+Title: Recursive File-Based Caching With Call Tree Introspection
+Version: 0.1.0
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+    person("Vedran", "Franke", 
+           email = "vedran.franke@gmail.com", 
+           role = c("aut", "cre"))
+Description: 
+    Tools for caching function results to disk while tracking 
+    recursive parent-child relationships between cached calls. 
+    Provides utilities to inspect the cache tree for debugging 
+    and provenance.
+License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.3
-Suggests: 
+RoxygenNote: 7.3.2
+Depends: 
+    R (>= 4.1)
+Imports:
+    digest,
+    tools
+Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+LazyData: true
