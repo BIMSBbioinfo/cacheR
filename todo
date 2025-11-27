@@ -1,11 +1,14 @@
 [] expand to output "targets" file
-[] test for arguments
 
-[] vignette - RNAseq example
 [] vignette - scRNAseq example
-[] check for package version - especially when using renv
+[] renv integration
 
+[] write the web page
+[] test overhead
 
+[x] check for package version 
+[x] test for arguments
+[x] vignette - RNAseq example
 [x] test for files
     - currently works for paths in function arguments and specific functions
     - does not work for global variables

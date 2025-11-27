@@ -148,3 +148,71 @@ test_that("cacheFile does not invalidate when file counts stay the same", {
 
   expect_identical(res1, res2)
 })
+
+# --------------------------------------------------------#
+test_that("cacheFile invalidates when using base::list.files on an argument path", {
+  if (exists("cacheTree_reset", mode = "function"))
+    cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_files_base_listfiles")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+
+  input_dir <- file.path(tempdir(), "cache_input_base_listfiles")
+  unlink(input_dir, recursive = TRUE, force = TRUE)
+  dir.create(input_dir, showWarnings = FALSE, recursive = TRUE)
+
+  file.create(file.path(input_dir, "file1.txt"))
+
+  cached_fun <- cacheFile(cache_dir = cache_dir) %@% function(path) {
+    # now tracked via .find_path_specs, even though namespaced
+    length(base::list.files(path))
+  }
+
+  n1 <- cached_fun(input_dir)
+  expect_equal(n1, 1L)
+
+  # add a file; hash should change and function should recompute
+  file.create(file.path(input_dir, "file2.txt"))
+
+  n2 <- cached_fun(input_dir)
+  expect_equal(n2, 2L)
+  expect_gt(n2, n1)
+})
+
+# --------------------------------------------------------#
+test_that("cacheFile invalidates when path is passed via ...", {
+  if (exists("cacheTree_reset", mode = "function"))
+    cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_test_files_dots")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+
+  input_dir <- file.path(tempdir(), "cache_input_dir_dots")
+  unlink(input_dir, recursive = TRUE, force = TRUE)
+  dir.create(input_dir, showWarnings = FALSE, recursive = TRUE)
+
+  # start with one file
+  file.create(file.path(input_dir, "file1.txt"))
+
+  fun <- function(...) {
+    args <- list(...)
+    path <- args$path
+    length(list.files(path))
+  }
+
+  cached_fun <- cacheFile(cache_dir = cache_dir) %@% fun
+
+  n1 <- cached_fun(path = input_dir)
+  expect_equal(n1, 1L)
+
+  # add a second file; should force a new cache key
+  file.create(file.path(input_dir, "file2.txt"))
+
+  n2 <- cached_fun(path = input_dir)
+  expect_equal(n2, 2L)
+  expect_gt(n2, n1)
+})
+
+

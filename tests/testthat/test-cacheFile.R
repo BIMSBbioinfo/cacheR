@@ -224,3 +224,39 @@ test_that("cacheTree_save and cacheTree_load work", {
   unlink(cache_dir, recursive = TRUE)
   unlink(graph_path)
 })
+
+# --------------------------------------------------------#
+test_that("cacheFile tracks multiple dir arguments and vector paths", {
+  if (exists("cacheTree_reset", mode = "function"))
+    cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_files_multidir")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+
+  dir1 <- file.path(tempdir(), "cache_multidir_1")
+  dir2 <- file.path(tempdir(), "cache_multidir_2")
+  unlink(dir1, recursive = TRUE, force = TRUE)
+  unlink(dir2, recursive = TRUE, force = TRUE)
+  dir.create(dir1, showWarnings = FALSE, recursive = TRUE)
+  dir.create(dir2, showWarnings = FALSE, recursive = TRUE)
+
+  file.create(file.path(dir1, "a.txt"))
+  file.create(file.path(dir2, "b.txt"))
+
+  fun <- function(path1, path2) {
+    # vectorized paths
+    sum(vapply(c(path1, path2), function(p) length(list.files(p)), integer(1)))
+  }
+
+  cached_fun <- cacheFile(cache_dir = cache_dir) %@% fun
+
+  n1 <- cached_fun(dir1, dir2)
+  expect_equal(n1, 2L)
+
+  # add another file to dir2; hash should change
+  file.create(file.path(dir2, "c.txt"))
+  n2 <- cached_fun(dir1, dir2)
+  expect_equal(n2, 3L)
+  expect_gt(n2, n1)
+})
