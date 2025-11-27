@@ -1,5 +1,5 @@
 # tests/testthat/test-cacheFile-file-tracking.R
-
+# --------------------------------------------------------#
 test_that("cacheFile invalidates when number of files in arg path changes", {
   # optional, depending on your package
   if (exists("cacheTree_reset", mode = "function")) {
@@ -7,9 +7,11 @@ test_that("cacheFile invalidates when number of files in arg path changes", {
   }
 
   cache_dir <- file.path(tempdir(), "cache_test_files_arg")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
   dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 
   input_dir <- file.path(tempdir(), "cache_input_dir_arg")
+  unlink(input_dir, recursive = TRUE, force = TRUE)
   dir.create(input_dir, showWarnings = FALSE, recursive = TRUE)
 
   # start with one file
@@ -34,15 +36,18 @@ test_that("cacheFile invalidates when number of files in arg path changes", {
   expect_gt(n2, n1)
 })
 
+# --------------------------------------------------------#
 test_that("cacheFile invalidates when hardcoded literal path changes", {
   if (exists("cacheTree_reset", mode = "function")) {
     cacheTree_reset()
   }
 
   cache_dir <- file.path(tempdir(), "cache_test_files_literal")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
   dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 
   static_dir <- file.path(tempdir(), "cache_static_dir")
+  unlink(static_dir, recursive = TRUE, force = TRUE)
   dir.create(static_dir, showWarnings = FALSE, recursive = TRUE)
 
   # build a function that literally contains list.files('<static_dir>') in its body
@@ -63,15 +68,18 @@ test_that("cacheFile invalidates when hardcoded literal path changes", {
   expect_gt(n2, n1)
 })
 
+# --------------------------------------------------------#
 test_that("cacheFile invalidates when dir(global_variable) changes", {
   if (exists("cacheTree_reset", mode = "function")) {
     cacheTree_reset()
   }
 
   cache_dir <- file.path(tempdir(), "cache_test_files_global")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
   dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 
   global_dir <- file.path(tempdir(), "cache_global_dir")
+  unlink(global_dir, recursive = TRUE, force = TRUE)
   dir.create(global_dir, showWarnings = FALSE, recursive = TRUE)
 
   # assign to a global name used inside the function body
@@ -108,15 +116,18 @@ test_that("cacheFile invalidates when dir(global_variable) changes", {
   expect_gt(n2, n1)
 })
 
+# --------------------------------------------------------#
 test_that("cacheFile does not invalidate when file counts stay the same", {
   if (exists("cacheTree_reset", mode = "function")) {
     cacheTree_reset()
   }
 
   cache_dir <- file.path(tempdir(), "cache_test_files_stable")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
   dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 
   input_dir <- file.path(tempdir(), "cache_input_dir_stable")
+  unlink(input_dir, recursive = TRUE, force = TRUE)
   dir.create(input_dir, showWarnings = FALSE, recursive = TRUE)
 
   # deterministic set of files

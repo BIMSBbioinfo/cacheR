@@ -1,13 +1,4 @@
-# tests/testthat/test-cacheTree.R -----------------------------------------
-
-source("cacheTree.R")
-source("decorate.R")
-
-library(testthat)
-library(digest)
-# If not in a package, uncomment:
-# source("R/cacheTree.R")
-
+# --------------------------------------------------------#
 test_that("cacheFile caches results and avoids re-running", {
   cacheTree_reset()
   
@@ -36,6 +27,7 @@ test_that("cacheFile caches results and avoids re-running", {
   unlink(cache_dir, recursive = TRUE)
 })
 
+# --------------------------------------------------------#
 test_that("recursive calls produce parent–child relationships", {
   cacheTree_reset()
   
@@ -72,6 +64,7 @@ test_that("recursive calls produce parent–child relationships", {
   unlink(cache_dir, recursive = TRUE)
 })
 
+# --------------------------------------------------------#
 test_that("track_file registers file dependencies with hashes", {
   cacheTree_reset()
   
@@ -110,8 +103,7 @@ test_that("track_file registers file dependencies with hashes", {
   unlink(data_path)
 })
 
-# NEW 1: file changes when tracked directly in cached function --------------------
-
+# --------------------------------------------------------#
 test_that("cacheTree_changed_files flags modified tracked file (direct use)", {
   cacheTree_reset()
   
@@ -148,8 +140,7 @@ test_that("cacheTree_changed_files flags modified tracked file (direct use)", {
   unlink(data_path)
 })
 
-# NEW 2: file changes when track_file() is used in an internal helper -------------
-
+# --------------------------------------------------------#
 test_that("cacheTree_changed_files flags modified file when tracked in internal helper", {
   cacheTree_reset()
   
@@ -200,6 +191,7 @@ test_that("cacheTree_changed_files flags modified file when tracked in internal 
   unlink(data_path)
 })
 
+# --------------------------------------------------------#
 test_that("cacheTree_save and cacheTree_load work", {
   cacheTree_reset()
   

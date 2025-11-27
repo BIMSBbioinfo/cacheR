@@ -1,11 +1,13 @@
+# --------------------------------------------------------#
+# --------------------------------------------------------#
 test_that("cacheFile stores pkgs metadata when function uses non-base package", {
   skip_if_not_installed("digest")
 
-  # optional: reset cache tree if you have this helper
   if (exists("cacheTree_reset", mode = "function"))
     cacheTree_reset()
 
   cache_dir <- file.path(tempdir(), "cache_pkgdeps1")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
   dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 
   f <- cacheFile(cache_dir = cache_dir) %@% function(x) {
@@ -19,7 +21,7 @@ test_that("cacheFile stores pkgs metadata when function uses non-base package", 
   expect_length(files, 1)
 
   # read cache metadata
-  obj <- .cacheR_read(files[1])
+  obj <- .cacheR_load(files[1])
 
   # we should have a 'pkgs' entry with 'digest' in it
   expect_true("pkgs" %in% names(obj))
@@ -34,6 +36,7 @@ test_that("cacheFile stores pkgs metadata when function uses non-base package", 
   expect_equal(length(files2), 1)
 })
 
+# --------------------------------------------------------#
 test_that("cacheFile hash changes when pkgs metadata changes", {
   # This does not depend on .find_package_deps, we just mutate the .pkg_deps
   # default argument on the wrapper function and check that we get a
@@ -43,6 +46,7 @@ test_that("cacheFile hash changes when pkgs metadata changes", {
     cacheTree_reset()
 
   cache_dir <- file.path(tempdir(), "cache_pkgdeps2")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
   dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 
   cf <- cacheFile(cache_dir = cache_dir) %@% function(x) {
@@ -83,15 +87,17 @@ test_that("cacheFile hash changes when pkgs metadata changes", {
   expect_false(hash1 %in% hashes[-match(files1[1], files2)])
 
   # Sanity: both files should be readable and contain pkgs in metadata
-  objs <- lapply(file.path(cache_dir, files2), .cacheR_read)
+  objs <- lapply(file.path(cache_dir, files2), .cacheR_load)
   expect_true(all(vapply(objs, function(o) "pkgs" %in% names(o), logical(1))))
 })
 
+# --------------------------------------------------------#
 test_that("cacheFile pkgs metadata is NULL for base-only functions", {
   if (exists("cacheTree_reset", mode = "function"))
     cacheTree_reset()
 
   cache_dir <- file.path(tempdir(), "cache_pkgdeps3")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
   dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 
   f <- cacheFile(cache_dir = cache_dir) %@% function(x) {
@@ -104,9 +110,10 @@ test_that("cacheFile pkgs metadata is NULL for base-only functions", {
   files <- list.files(cache_dir, full.names = TRUE)
   expect_length(files, 1)
 
-  obj <- .cacheR_read(files[1])
+  obj <- .cacheR_load(files[1])
 
   # We do expect the 'pkgs' field to exist, but be NULL
   expect_true("pkgs" %in% names(obj))
   expect_true(is.null(obj$pkgs) || nrow(obj$pkgs) == 0)
 })
+

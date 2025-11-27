@@ -23,200 +23,124 @@
 cacheFile <- function(
     cache_dir = NULL,
     backend   = getOption("cacheR.backend", "rds"),
-    file_args = NULL  # names of args that are directories
-  ) decorator %@% function(f) {
+    file_args = NULL  # optional: names of args that are directories
+) decorator %@% function(f) {
 
+  ## ---- setup cache directory ----
   if (is.null(cache_dir)) {
     cache_dir <- cacheR_default_dir()
-  } else {
-    if (!file.exists(cache_dir))
-      stop("the designated cache_dir does not exist")
+  } else if (!file.exists(cache_dir)) {
+    stop("the designated cache_dir does not exist")
   }
-  # normalize the path
   cache_dir <- normalizePath(cache_dir, mustWork = FALSE)
 
   backend <- match.arg(backend, c("rds", "qs"))
 
-  # --- helper: find literal directory strings in the function body ------
-  .find_literal_dirs <- function(expr) {
-    res <- character()
+  ## ---- function metadata (static) -----------------------------------
+  f_formals <- names(formals(f))
+  fbody     <- lapply(as.list(body(f)), as.character)
 
-    walk <- function(e) {
-      if (is.call(e)) {
-        fname <- as.character(e[[1]])[1]
-
-        # look at list.files(), dir(), list.dirs()
-        if (fname %in% c("list.files", "dir", "list.dirs")) {
-          args <- as.list(e)[-1]
-          arg_names <- names(args)
-          target <- NULL
-
-          # named 'path' argument if present, otherwise first positional
-          if (!is.null(arg_names) && "path" %in% arg_names) {
-            target <- args[["path"]]
-          } else if (length(args) >= 1) {
-            target <- args[[1]]
-          }
-
-          if (!is.null(target) && is.character(target) && length(target) == 1L) {
-            res <<- c(res, target)
-          }
-        }
-
-        # recurse into all subexpressions
-        for (el in as.list(e)) walk(el)
-      }
-    }
-
-    walk(expr)
-    unique(res)
-  }
-
-  # --- helper: find package dependencies of a function -------------------
-  .find_package_deps <- function(fun) {
-    if (!requireNamespace("codetools", quietly = TRUE)) {
-      warning("codetools not available; package dependencies will not be tracked.")
-      return(NULL)
-    }
-
-    globs <- codetools::findGlobals(fun, merge = FALSE)
-    fun_names <- unique(globs$functions)
-
-    if (!length(fun_names)) return(NULL)
-
-    pkgs <- unique(unlist(lapply(fun_names, function(sym) {
-      ga <- getAnywhere(sym)
-
-      if (!length(ga$where)) return(NULL)
-
-      ns <- ga$where[grepl("^package:", ga$where)]
-      if (!length(ns)) return(NULL)
-
-      sub("^package:", "", ns)
-    })))
-
-    if (!length(pkgs)) return(NULL)
-
-    # ignore base-ish packages
-    pkgs <- setdiff(pkgs, c("base", "stats", "utils",
-                            "graphics", "grDevices", "methods"))
-    if (!length(pkgs)) return(NULL)
-
-    versions <- vapply(pkgs, function(p) {
-      as.character(utils::packageVersion(p))
-    }, character(1L))
-
-    # deterministic ordering
-    ord <- order(pkgs)
-    pkgs <- pkgs[ord]
-    versions <- versions[ord]
-
-    data.frame(
-      package = pkgs,
-      version = versions,
-      stringsAsFactors = FALSE
-    )
-  }
-
-  # capture formal arguments and body as in your original
-  argnames <- head(as.list(args(as.list(environment())[[1]])), -1)
-  fbody    <- lapply(as.list(body(f)), as.character)
-
-  # literal directories hardcoded in the body, e.g. list.files("/some/path")
-  # (assuming .find_path_specs is defined elsewhere in your file, as before)
   path_specs      <- .find_path_specs(body(f))
-  static_dirs_lit <- path_specs$literals       # "/hard/coded/path"
+  static_dirs_lit <- path_specs$literals
   static_dirs_sym <- path_specs$symbols
 
-  # NEW: compute package dependencies once when decorator is created
-  pkg_deps <- .find_package_deps(f)
+  ## auto-detect which symbols are arguments vs globals
+  auto_file_args  <- intersect(static_dirs_sym, f_formals)
+  global_syms     <- setdiff(static_dirs_sym, auto_file_args)
 
-  function(...,
-           .load     = TRUE,
-           .anames   = argnames,
-           .fbody    = fbody,
-           .pkg_deps = pkg_deps) {
+  if (is.null(file_args)) {
+    effective_file_args <- auto_file_args
+  } else {
+    effective_file_args <- unique(c(as.character(file_args), auto_file_args))
+  }
 
-    # ---- reconstruct the call & arguments (your original logic) ---------
-    fcall <- as.list(match.call())
+  pkg_deps <- .find_package_deps(f)   # may be NULL for base-only functions
 
-    fname <- fcall[[1]]
-    args  <- fcall[-1]
+  ## ===================================================================
+  ## Wrapper
+  ## ===================================================================
+  function(..., .load = TRUE, .pkg_deps = pkg_deps) {
 
-    if (!is.null(names(args)) && any(names(args) == ".load"))
-      args <- args[names(args) != ".load"]
+    ## ----------------------------------------------------------
+    ## (1) capture wrapper call, with dots expanded
+    ## ----------------------------------------------------------
+    full_call <- match.call(expand.dots = TRUE)   # e.g. cached_fun(input_dir, .load = FALSE)
+    fname     <- full_call[[1]]
 
-    if (!is.null(names(args))) {
-      named_args <- setdiff(names(args), "")
-      if (!is.null(named_args)) {
-        for (i in named_args)
-          .anames[[i]] <- args[[i]]
-      }
+    ## ----------------------------------------------------------
+    ## (2) drop internal args (.load, .pkg_deps) and retarget to f
+    ## ----------------------------------------------------------
+    call_f_list <- as.list(full_call)
 
-      pos_args <- which(names(args) == "")
-      if (length(pos_args) > 0) {
-        for (i in pos_args)
-          .anames[[i]] <- args[[i]]
-      }
-    } else {
-      for (i in seq_along(args))
-        .anames[[i]] <- args[[i]]
+    if (!is.null(names(call_f_list))) {
+      keep <- !names(call_f_list) %in% c(".load", ".pkg_deps")
+      keep[1L] <- TRUE  # first element is the function symbol, keep it
+      call_f_list <- call_f_list[keep]
     }
 
-    .dotind <- names(.anames) == "..."
-    if (any(.dotind)) {
-      .anames <- .anames[!.dotind]
-    }
+    # retarget function symbol to 'f'
+    call_f_list[[1]] <- quote(f)
+    call_f <- as.call(call_f_list)
 
-    if (length(args) > 0) {
-      for (i in seq_along(.anames)) {
-        if (is.call(.anames[[i]]) || is.name(.anames[[i]])) {
-          val <- eval(.anames[[i]], envir = parent.frame())
-          if (is.null(val)) val <- list(NULL)
-          .anames[[i]] <- val
-        }
-      }
-    }
+    ## ----------------------------------------------------------
+    ## (3) match against f's formals
+    ##     → positional args become named (e.g. path = input_dir)
+    ## ----------------------------------------------------------
+    call_matched <- match.call(definition = f, call = call_f, expand.dots = TRUE)
 
-    # ---- file counts from arguments specified in file_args --------------
+    # unevaluated args used for hashing
+    args_for_hash <- as.list(call_matched)[-1]
+
+    ## ----------------------------------------------------------
+    ## (4) dynamic file counts from argument-based dirs
+    ## ----------------------------------------------------------
     file_counts_args <- NULL
-    if (!is.null(file_args)) {
-      fa <- intersect(as.character(file_args), names(.anames))
+    if (length(effective_file_args)) {
+      fa <- unique(effective_file_args)
 
-      if (length(fa) > 0L) {
-        fc <- lapply(fa, function(arg) {
-          val <- .anames[[arg]]
-          if (is.null(val)) return(NA_integer_)
+      fc <- lapply(fa, function(argname) {
+        if (!argname %in% names(call_matched)) return(NA_integer_)
 
-          dirs <- as.character(val)
-          counts <- vapply(dirs, function(d) {
-            d_norm <- normalizePath(d, mustWork = FALSE)
-            if (!dir.exists(d_norm)) return(0L)
-            length(list.files(d_norm))
-          }, integer(1L))
+        expr <- call_matched[[argname]]
+        val  <- tryCatch(
+          eval(expr, envir = parent.frame()),
+          error = function(e) NULL
+        )
+        if (is.null(val)) return(NA_integer_)
 
-          sum(counts)
-        })
+        dirs <- as.character(val)
+        counts <- vapply(dirs, function(d) {
+          p <- normalizePath(d, mustWork = FALSE)
+          if (!dir.exists(p)) return(0L)
+          length(list.files(p))
+        }, integer(1L))
 
-        file_counts_args <- setNames(unlist(fc, use.names = FALSE), fa)
-      }
+        sum(counts)
+      })
+
+      names(fc) <- fa
+      file_counts_args <- unlist(fc, use.names = TRUE)
     }
 
-    # ---- file counts from hardcoded literal directories -----------------
+    ## ----------------------------------------------------------
+    ## (5) static literal path counts
+    ## ----------------------------------------------------------
     static_counts_lit <- NULL
     if (length(static_dirs_lit) > 0L) {
       static_counts_lit <- vapply(static_dirs_lit, function(d) {
-        d_norm <- normalizePath(d, mustWork = FALSE)
-        if (!dir.exists(d_norm)) return(0L)
-        length(list.files(d_norm))
+        p <- normalizePath(d, mustWork = FALSE)
+        if (!dir.exists(p)) return(0L)
+        length(list.files(p))
       }, integer(1L))
       names(static_counts_lit) <- static_dirs_lit
     }
 
-    # ---- file counts from global vars used as dir()/list.files() paths --
+    ## ----------------------------------------------------------
+    ## (6) static global-variable dir counts
+    ## ----------------------------------------------------------
     static_counts_sym <- NULL
-    if (length(static_dirs_sym) > 0L) {
-      static_counts_sym <- vapply(static_dirs_sym, function(vname) {
+    if (length(global_syms) > 0L) {
+      static_counts_sym <- vapply(global_syms, function(vname) {
         val <- tryCatch(
           get(vname, envir = parent.frame(), inherits = TRUE),
           error = function(e) NULL
@@ -225,42 +149,46 @@ cacheFile <- function(
 
         dirs <- as.character(val)
         counts <- vapply(dirs, function(d) {
-          d_norm <- normalizePath(d, mustWork = FALSE)
-          if (!dir.exists(d_norm)) return(0L)
-          length(list.files(d_norm))
+          p <- normalizePath(d, mustWork = FALSE)
+          if (!dir.exists(p)) return(0L)
+          length(list.files(p))
         }, integer(1L))
 
         sum(counts)
       }, integer(1L))
-      names(static_counts_sym) <- paste0("sym:", static_dirs_sym)
+      names(static_counts_sym) <- paste0("sym:", global_syms)
     }
 
-    # ---- combine all counts into a single file_counts vector ------------
+    ## ----------------------------------------------------------
+    ## (7) merge all file counts
+    ## ----------------------------------------------------------
     all_counts <- c(file_counts_args, static_counts_lit, static_counts_sym)
     file_counts <- if (length(all_counts)) {
-      # merge by name in case something repeats
       tapply(all_counts, names(all_counts), sum)
     } else {
       NULL
     }
 
-    # ---- compute hash & output path -------------------------------------
-    hashlist  <- list(
-      anames      = .anames,
-      body        = .fbody,
-      file_counts = file_counts,   # depends on arg + static dir file counts
-      pkgs        = .pkg_deps      # NEW: package dependencies (name + version)
+    ## ----------------------------------------------------------
+    ## (8) build hash & outfile path
+    ## ----------------------------------------------------------
+    hashlist <- list(
+      call        = args_for_hash,
+      body        = fbody,
+      file_counts = file_counts,
+      pkgs        = .pkg_deps
     )
 
     args_hash <- digest::digest(hashlist, algo = "md5")
-    message(args_hash)
 
     outfile <- file.path(
       cache_dir,
-      paste(as.character(fname), args_hash, "rds", sep = ".")
+      paste(as.character(fname), args_hash, backend, sep = ".")
     )
 
-    # ---- register node + manage call stack ------------------------------
+    ## ----------------------------------------------------------
+    ## (9) register in cache tree
+    ## ----------------------------------------------------------
     node_id <- paste(as.character(fname), args_hash, sep = ":")
 
     .cacheTree_register_node(
@@ -275,24 +203,24 @@ cacheFile <- function(
       .cacheTree_env$call_stack <- head(.cacheTree_env$call_stack, -1L)
     }, add = TRUE)
 
-    # ---- caching logic (as before) --------------------------------------
+    ## ----------------------------------------------------------
+    ## (10) load or run + save
+    ## ----------------------------------------------------------
     if (.load && file.exists(outfile)) {
-      message(paste0(fname, ": Returning loaded data ..."))
-      message(outfile)
-      .cacheR_read(outfile)$dat
+      .cacheR_load(path = outfile)$dat
     } else {
-      message(paste0(fname, ": Running function ..."))
       dat <- f(...)
 
-      .cacheR_write(
-        list(
+      .cacheR_save(
+        object = list(
           dat         = dat,
-          args        = .anames,
-          body        = .fbody,
-          file_counts = file_counts,   # extra metadata
-          pkgs        = .pkg_deps      # NEW: stored in cache metadata
+          args        = args_for_hash,
+          body        = fbody,
+          file_counts = file_counts,
+          pkgs        = .pkg_deps
         ),
-        outfile
+        path    = outfile,
+        backend = backend
       )
       dat
     }
@@ -300,6 +228,10 @@ cacheFile <- function(
 }
 
 
+
+## ============================================================
+## Helpers (top-level)
+## ============================================================
 
 # --- helper: find literal directory strings in the function body ------
 .find_path_specs <- function(expr) {
@@ -344,29 +276,37 @@ cacheFile <- function(
   )
 }
 
-
+# --- helper: find package dependencies of a function -------------------
 .find_package_deps <- function(fun) {
-  globs <- codetools::findGlobals(fun, merge = FALSE)
+  expr <- body(fun)
+  pkgs <- character()
 
-  fun_names <- unique(globs$functions)
+  walk <- function(e) {
+    if (is.call(e)) {
+      funsym <- e[[1]]
 
-  pkgs <- unique(unlist(lapply(fun_names, function(sym) {
-    ga <- getAnywhere(sym)
+      # detect pkg::fun or pkg:::fun
+      if (identical(funsym, quote(`::`)) || identical(funsym, quote(`:::`))) {
+        pkg <- as.character(e[[2]])[1]
+        pkgs <<- c(pkgs, pkg)
+      }
 
-    if (!length(ga$where)) return(NULL)
+      for (el in as.list(e)) walk(el)
+    }
+  }
 
-    ns <- ga$where[grepl("^package:", ga$where)]
-    if (!length(ns)) return(NULL)
+  walk(expr)
 
-    sub("^package:", "", ns)
-  })))
-
-  # optional: ignore base-ish stuff
-  pkgs <- setdiff(pkgs, c("base", "stats", "utils", "graphics", "grDevices", "methods"))
-
+  pkgs <- unique(pkgs)
   if (!length(pkgs)) return(NULL)
 
-  versions <- vapply(pkgs, function(p) as.character(utils::packageVersion(p)), character(1))
+  versions <- vapply(pkgs, function(p) {
+    if (requireNamespace(p, quietly = TRUE)) {
+      as.character(utils::packageVersion(p))
+    } else {
+      NA_character_
+    }
+  }, character(1L))
 
   data.frame(
     package = pkgs,
@@ -374,3 +314,4 @@ cacheFile <- function(
     stringsAsFactors = FALSE
   )
 }
+
