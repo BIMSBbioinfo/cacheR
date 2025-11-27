@@ -1,6 +1,14 @@
+[] expand to output "targets" file
 [] test for arguments
-[] test for files
-[] expand to output targets file
+
+[] vignette - RNAseq example
+[] vignette - scRNAseq example
+[] check for package version - especially when using renv
+
+
+[x] test for files
+    - currently works for paths in function arguments and specific functions
+    - does not work for global variables
 
 251125
 [x] use faster read-write function than RDS

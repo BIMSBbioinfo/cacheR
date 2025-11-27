@@ -19,7 +19,8 @@ Depends:
     R (>= 4.1)
 Imports:
     digest,
-    tools
+    tools,
+    codetools
 Suggests:
     testthat (>= 3.0.0),
     qs
