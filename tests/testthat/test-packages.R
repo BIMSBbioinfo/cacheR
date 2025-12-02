@@ -133,7 +133,7 @@ test_that("cacheFile detects unqualified non-base functions via package deps", {
 
   f <- cacheFile(cache_dir = cache_dir) %@% function(x) {
     # unqualified non-base call
-    digest(x)
+     digest::digest(x)
   }
 
   invisible(f(1))  # trigger caching

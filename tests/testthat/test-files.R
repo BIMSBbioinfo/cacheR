@@ -1,7 +1,6 @@
 # tests/testthat/test-cacheFile-file-tracking.R
 # --------------------------------------------------------#
 test_that("cacheFile invalidates when number of files in arg path changes", {
-  # optional, depending on your package
   if (exists("cacheTree_reset", mode = "function")) {
     cacheTree_reset()
   }
@@ -21,7 +20,6 @@ test_that("cacheFile invalidates when number of files in arg path changes", {
     cache_dir = cache_dir,
     file_args = "path"
   ) %@% function(path) {
-    # mimics a function that internally uses list.files(path)
     length(list.files(path))
   }
 
@@ -138,7 +136,6 @@ test_that("cacheFile does not invalidate when file counts stay the same", {
     cache_dir = cache_dir,
     file_args = "path"
   ) %@% function(path) {
-    # do something slightly more than just counting
     files <- sort(list.files(path))
     paste(files, collapse = ",")
   }
@@ -165,14 +162,12 @@ test_that("cacheFile invalidates when using base::list.files on an argument path
   file.create(file.path(input_dir, "file1.txt"))
 
   cached_fun <- cacheFile(cache_dir = cache_dir) %@% function(path) {
-    # now tracked via .find_path_specs, even though namespaced
     length(base::list.files(path))
   }
 
   n1 <- cached_fun(input_dir)
   expect_equal(n1, 1L)
 
-  # add a file; hash should change and function should recompute
   file.create(file.path(input_dir, "file2.txt"))
 
   n2 <- cached_fun(input_dir)
@@ -193,7 +188,6 @@ test_that("cacheFile invalidates when path is passed via ...", {
   unlink(input_dir, recursive = TRUE, force = TRUE)
   dir.create(input_dir, showWarnings = FALSE, recursive = TRUE)
 
-  # start with one file
   file.create(file.path(input_dir, "file1.txt"))
 
   fun <- function(...) {
@@ -207,7 +201,6 @@ test_that("cacheFile invalidates when path is passed via ...", {
   n1 <- cached_fun(path = input_dir)
   expect_equal(n1, 1L)
 
-  # add a second file; should force a new cache key
   file.create(file.path(input_dir, "file2.txt"))
 
   n2 <- cached_fun(path = input_dir)
@@ -215,4 +208,202 @@ test_that("cacheFile invalidates when path is passed via ...", {
   expect_gt(n2, n1)
 })
 
+# --------------------------------------------------------#
+test_that(".find_path_specs returns empty lists for expressions without path calls", {
+  expr <- quote({
+    x <- 1 + 2
+    y <- x * 3
+  })
 
+  specs <- cacheR:::`.find_path_specs`(expr)
+
+  expect_type(specs, "list")
+  expect_named(specs, c("literals", "symbols"))
+  expect_length(specs$literals, 0L)
+  expect_length(specs$symbols,  0L)
+})
+
+# --------------------------------------------------------#
+test_that(".find_path_specs detects simple literal and symbol paths", {
+  f <- function(my_dir) {
+    a <- list.files("data")
+    b <- dir(path = my_dir)
+    c <- list.dirs("more_data", recursive = FALSE)
+    invisible(NULL)
+  }
+
+  specs <- cacheR:::`.find_path_specs`(body(f))
+
+  expect_true("data"      %in% specs$literals)
+  expect_true("more_data" %in% specs$literals)
+  expect_true("my_dir" %in% specs$symbols)
+})
+
+# --------------------------------------------------------#
+test_that(".find_path_specs handles namespaced calls and composite expressions", {
+  f <- function(base_dir) {
+    files1 <- base::list.files("raw")
+    files2 <- list.files(file.path(base_dir, "subdir", "nested"))
+    invisible(NULL)
+  }
+
+  specs <- cacheR:::`.find_path_specs`(body(f))
+
+  expect_true("raw"    %in% specs$literals)
+  expect_true("subdir" %in% specs$literals)
+  expect_true("nested" %in% specs$literals)
+  expect_true("base_dir" %in% specs$symbols)
+})
+
+# --------------------------------------------------------#
+test_that(".find_path_specs does not error on more complex bodies", {
+  f <- function(path_sym, other) {
+    if (!missing(other)) {
+      message("other arg present")
+    }
+    x <- list.files(path_sym)
+    y <- dir(path = "literal_dir")
+    z <- list.files(path = c("a", "b", path_sym))
+    invisible(list(x, y, z))
+  }
+
+  expect_silent({
+    specs <- cacheR:::`.find_path_specs`(body(f))
+  })
+
+  expect_true("literal_dir" %in% specs$literals)
+  expect_true("a"           %in% specs$literals)
+  expect_true("b"           %in% specs$literals)
+  expect_true("path_sym"    %in% specs$symbols)
+})
+
+# --------------------------------------------------------#
+test_that("cacheFile handles non-character symbols in path specs (e.g. file.path function)", {
+  cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_test_paths")
+  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+
+  base_dir <- tempdir()
+
+  cached_fun <- cacheFile(
+    cache_dir = cache_dir,
+    file_args = "base_dir"
+  ) %@% function(base_dir) {
+    files <- list.files(file.path(base_dir, "subdir"), recursive = TRUE)
+    length(files)
+  }
+
+  subdir <- file.path(base_dir, "subdir")
+  dir.create(subdir, showWarnings = FALSE)
+
+  # Ensure res1/res2 persist outside expect_error
+  res1 <- NULL
+  expect_error(
+    res1 <- cached_fun(base_dir),
+    NA
+  )
+
+  res2 <- NULL
+  expect_error(
+    res2 <- cached_fun(base_dir),
+    NA
+  )
+
+  expect_identical(res1, res2)
+})
+
+
+# --------------------------------------------------------#
+test_that("symbol path resolution skips non-character values", {
+  env <- new.env(parent = emptyenv())
+  env$dir_char <- "data"
+  env$file.path <- file.path
+
+  syms <- c("dir_char", "file.path", "does_not_exist")
+
+  fn_env <- env
+
+  get_symbol_paths <- function(symbols) {
+    vapply(symbols, function(sym) {
+      if (!exists(sym, envir = fn_env, inherits = TRUE)) return(NA_character_)
+      val <- get(sym, envir = fn_env, inherits = TRUE)
+      if (is.character(val) && length(val) >= 1L) val[[1L]] else NA_character_
+    }, character(1L))
+  }
+
+  paths <- get_symbol_paths(syms)
+
+  expect_equal(paths[["dir_char"]], "data")
+  expect_true(is.na(paths[["file.path"]]))
+  expect_true(is.na(paths[["does_not_exist"]]))
+})
+
+
+# --------------------------------------------- #
+test_that(".find_* helpers handle DESeq2-like dds_from_counts body without extra deps", {
+  f <- function(counts_tbl, sample_table) {
+    mat <- as.matrix(counts_tbl[, sample_table$sample_id])
+    rownames(mat) <- counts_tbl$gene_id
+    coldata <- as.data.frame(sample_table)
+    rownames(coldata) <- coldata$sample_id
+    stats::lm(mat[ , 1] ~ condition, data = coldata)
+  }
+
+  expect_silent({
+    specs <- .find_path_specs(body(f))
+    deps  <- .find_package_deps(f)
+  })
+
+  expect_length(specs$literals, 0L)
+  expect_length(specs$symbols,  0L)
+
+  if (is.null(deps)) {
+    succeed()
+  } else {
+    expect_s3_class(deps, "data.frame")
+    expect_false(any(deps$package %in% c("DESeq2")))
+  }
+})
+
+
+# --------------------------------------------- #
+test_that("cacheFile works with a DESeq2-like dds_from_counts function without DESeq2", {
+  if (exists("cacheTree_reset", mode = "function")) {
+    cacheTree_reset()
+  }
+
+  cache_dir <- file.path(tempdir(), "cache_dds_like_counts")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+
+  dds_like_from_counts <- cacheFile(cache_dir = cache_dir) %@%
+    function(counts_tbl, sample_table) {
+      mat <- as.matrix(counts_tbl[, sample_table$sample_id])
+      rownames(mat) <- counts_tbl$gene_id
+      coldata <- as.data.frame(sample_table)
+      rownames(coldata) <- coldata$sample_id
+      design <- stats::model.matrix(~ condition, data = coldata)
+      list(counts = mat, coldata = coldata, design = design)
+    }
+
+  set.seed(1)
+  sample_table <- data.frame(
+    sample_id = paste0("s", 1:3),
+    condition = c("A", "A", "B"),
+    stringsAsFactors = FALSE
+  )
+  counts_tbl <- data.frame(
+    gene_id = paste0("g", 1:10),
+    s1 = rpois(10, 10),
+    s2 = rpois(10, 12),
+    s3 = rpois(10,  5),
+    check.names = FALSE
+  )
+
+  res1 <- dds_like_from_counts(counts_tbl, sample_table)
+  res2 <- dds_like_from_counts(counts_tbl, sample_table)
+
+  expect_type(res1, "list")
+  expect_identical(res1, res2)
+})

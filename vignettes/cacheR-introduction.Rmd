@@ -1,0 +1,384 @@
+---
+title: "Introduction to cacheR"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to cacheR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.align = "center"
+)
+```
+
+# Overview
+
+`cacheR` provides **function-level caching** for R workflows.
+
+Typical use cases in basic statistics:
+
+- Expensive **summary statistics** on large datasets (mean, variance, quantiles).
+- Repeated computation of **correlation matrices**.
+- Multi-step pipelines, e.g. *preprocess → summarize → correlate*.
+
+The main idea:
+
+1. Wrap an existing function with `cacheFile()`.
+2. Call the new function as usual.
+3. `cacheR` saves results to disk and reuses them when inputs and function body have not changed.
+
+---
+
+# 1. Setup
+
+```{r}
+library(cacheR)
+```
+
+# If needed:
+# library(decor)  # for the %@% operator
+
+For this vignette we’ll use a **temporary cache directory**:
+
+```{r}
+cache_dir <- file.path(tempdir(), "cacheR-demo")
+dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+cache_dir
+```
+
+---
+
+# 2. Caching basic summary statistics
+
+Assume we have a function that computes several statistics at once:
+
+```{r}
+
+stat_summary <- function(x) {
+  message("Computing stats ...")
+  Sys.sleep(1)  # pretend it's expensive
+  x <- na.omit(x)
+  list(
+    mean     = mean(x),
+    variance = var(x),
+    sd       = sd(x),
+    median   = median(x)
+  )
+}
+```
+
+We create a **cached** version:
+
+```{r}
+
+cached_stat_summary <- cacheFile(
+  cache_dir = cache_dir,
+  backend   = "rds"
+) %@% function(x) {
+  stat_summary(x)
+}
+```
+
+Now, compare first vs second call:
+
+```{r}
+
+set.seed(1)
+x <- rnorm(1e5)
+
+system.time(res1 <- cached_stat_summary(x))
+system.time(res2 <- cached_stat_summary(x))
+
+res1
+identical(res1, res2)
+```
+
+- First call: prints `"Computing stats ..."` and takes ~1 second.
+- Second call with the *same* input: should be almost instant, reusing the cached result.
+
+---
+
+# 3. Caching a correlation matrix
+
+Computing a full correlation matrix can be expensive for many variables.  
+Let’s define a function that:
+
+- standardizes the columns,
+- computes the correlation matrix,
+- optionally returns means and variances as well.
+
+```{r}
+
+cor_with_moments <- function(mat) {
+  message("Computing correlations and moments ...")
+  Sys.sleep(1)  # simulate expensive work
+
+  # Basic checks
+  stopifnot(is.matrix(mat) || is.data.frame(mat))
+  mat <- as.matrix(mat)
+
+  means     <- colMeans(mat, na.rm = TRUE)
+  variances <- apply(mat, 2, var, na.rm = TRUE)
+
+  corr_mat  <- stats::cor(mat, use = "pairwise.complete.obs")
+
+  list(
+    mean      = means,
+    variance  = variances,
+    cor       = corr_mat
+  )
+}
+```
+
+Wrap it with `cacheFile()`:
+
+```{r}
+
+cached_cor_with_moments <- cacheFile(
+  cache_dir = cache_dir,
+  backend   = "rds"
+) %@% function(mat) {
+  cor_with_moments(mat)
+}
+```
+
+Test it:
+
+```{r}
+
+set.seed(123)
+mat <- matrix(rnorm(200 * 10), ncol = 10)
+
+system.time(res1 <- cached_cor_with_moments(mat))
+system.time(res2 <- cached_cor_with_moments(mat))
+
+str(res1$cor)
+identical(res1$cor, res2$cor)
+```
+
+Again:
+
+- First call: actually computes mean, variance and correlation.
+- Second call: returns the result from disk, skipping the expensive computation.
+
+---
+
+# 4. Nested caching: reuse pre-processing
+
+Suppose you often apply the same pre-processing (centering & scaling) before computing summary statistics or correlations.
+
+Define a **preprocessing** function and a **downstream** function that uses it:
+
+```{r}
+preprocess_matrix <- function(mat) {
+  message("Preprocessing matrix (center & scale) ...")
+  Sys.sleep(1)  # simulate expensive step
+  scale(mat)
+}
+
+# Cached preprocessing
+cached_preprocess_matrix <- cacheFile(
+  cache_dir = cache_dir
+) %@% function(mat) {
+  preprocess_matrix(mat)
+}
+```
+
+Now a downstream function that uses the preprocessed data to compute means, variances and correlations:
+
+```{r}
+analyze_scaled <- cacheFile(
+  cache_dir = cache_dir
+) %@% function(mat) {
+  message("Analyzing scaled data ...")
+  mat_scaled <- cached_preprocess_matrix(mat)
+
+  means     <- colMeans(mat_scaled)
+  variances <- apply(mat_scaled, 2, var)
+  corr_mat  <- stats::cor(mat_scaled)
+
+  list(
+    mean     = means,
+    variance = variances,
+    cor      = corr_mat
+  )
+}
+```
+
+Run it twice:
+
+```{r}
+set.seed(321)
+mat2 <- matrix(rnorm(300 * 8), ncol = 8)
+
+system.time(a1 <- analyze_scaled(mat2))
+system.time(a2 <- analyze_scaled(mat2))
+
+identical(a1$cor, a2$cor)
+```
+
+What happens:
+
+1. **First run**
+   - `cached_preprocess_matrix()` is executed and cached.
+   - `analyze_scaled()` is executed and cached.
+2. **Second run**
+   - Both the preprocessing step and the full analysis should be loaded from cache
+     (assuming the function bodies and input matrix are unchanged).
+
+If your version of `cacheR` supports a **cache tree**, you can inspect the relationships between cached calls:
+
+```{r}
+cacheTree_reset()
+a <- analyze_scaled(mat2)
+nodes <- cacheTree_nodes()
+nodes
+```
+
+You should see at least two nodes:
+
+- one for `analyze_scaled(mat2)`
+- one for `cached_preprocess_matrix(mat2)`
+
+---
+
+# 5. Using the `qs` backend for faster serialization
+
+For large matrices, the [`qs`](https://github.com/qsbase/qs) backend can be faster than base RDS.
+
+Install it once:
+
+```{r, eval=FALSE}
+install.packages("qs")
+```
+
+Then create a cached function with `backend = "qs"`:
+
+```{r}
+cached_cor_qs <- cacheFile(
+  cache_dir = cache_dir,
+  backend   = "qs"
+) %@% function(mat) {
+  cor_with_moments(mat)
+}
+```
+
+Compare timings:
+
+```{r}
+set.seed(999)
+mat_big <- matrix(rnorm(500 * 50), ncol = 50)
+
+system.time(r1 <- cached_cor_qs(mat_big))
+system.time(r2 <- cached_cor_qs(mat_big))
+
+identical(r1$cor, r2$cor)
+list.files(cache_dir, recursive = TRUE)
+```
+
+You should see some `.qs` files in the cache directory.
+
+---
+
+# 6. Combining file I/O and statistics
+
+Create an example CSV file 
+
+```{r make-example-csv, message=FALSE}
+# We use tempdir() so that the vignette can be built anywhere
+# without needing any external data files.
+
+set.seed(1)
+
+# Small numeric toy dataset
+my_data <- data.frame(
+  x = rnorm(100, mean = 0, sd = 1),
+  y = rnorm(100, mean = 5, sd = 2),
+  z = rnorm(100, mean = -2, sd = 0.5)
+)
+
+# Path where we'll save the CSV
+example_csv <- file.path(tempdir(), "my_data.csv")
+
+# Write the CSV (no row names to keep it clean)
+write.csv(my_data, example_csv, row.names = FALSE)
+```
+
+In practice, you often:
+
+1. Read data from a file (CSV, RDS, etc.),
+2. Compute summary statistics or correlations.
+
+
+You can cache both steps.
+
+```{r}
+read_numeric_csv <- function(path) {
+  message("Reading CSV: ", path)
+  Sys.sleep(1)  # simulate slow disk / network
+  read.csv(path)
+}
+
+cached_read_numeric_csv <- cacheFile(
+  cache_dir = cache_dir
+) %@% function(path) {
+  read_numeric_csv(path)
+}
+
+cached_file_stats <- cacheFile(
+  cache_dir = cache_dir
+) %@% function(path) {
+  df <- cached_read_numeric_csv(path)
+  cor_with_moments(df)
+}
+```
+
+Usage:
+
+```{r}
+res <- cached_file_stats(example_csv)
+res$mean
+res$cor
+```
+
+- First run: reads the CSV and computes stats.
+- Subsequent runs with the same file and same code: reuse cached results.
+
+(Depending on your `cacheR` version, there may be options such as `file_args` to incorporate directory or file contents into the cache key more explicitly.)
+
+---
+
+# 7. Practical tips
+
+- Use a project-local cache directory, e.g.:
+
+  ```r
+  cache_dir <- ".cacheR"
+  dir.create(cache_dir, showWarnings = FALSE)
+  ```
+
+- Add it to `.gitignore`:
+
+  ```text
+  .cacheR/
+  ```
+
+- Wrap **expensive** operations:
+  - reading large files
+  - computing big correlation matrices
+  - heavy preprocessing
+
+- For pure statistical pipelines, a common pattern is:
+
+  1. `cached_read()`         – load data
+  2. `cached_preprocess()`   – clean / transform
+  3. `cached_stats()`        – compute means, variances, correlations
+
+  Each step can be shared across many analyses.
+
+---
+

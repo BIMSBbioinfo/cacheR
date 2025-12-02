@@ -1,0 +1,39 @@
+
+template:
+  bootstrap: 5
+
+url: https://BIMSBbioinfo.github.io/cacheR
+
+home:
+  title: cacheR
+  description: "Simple function-level caching for R workflows."
+
+navbar:
+  structure:
+    left:  [home, reference, articles, news]
+    right: [github]
+  components:
+    github:
+      icon: fab fa-github
+      href: https://github.com//BIMSBbioinfo/cacheR
+
+articles:
+  - title: Getting started
+    contents:
+      - cacheR-introduction
+
+  - title: RNA-seq workflow example
+    contents:
+      - cacheR-rnaseq
+
+reference:
+  - title: "User functions"
+    contents:
+      - cacheFile
+      - cacheTree_nodes
+      - cacheTree_reset
+  - title: "Internals"
+    contents:
+      - starts_with(".")
+
+

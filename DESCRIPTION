@@ -14,7 +14,7 @@ Description:
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Depends: 
     R (>= 4.1)
 Imports:
@@ -23,6 +23,9 @@ Imports:
     codetools
 Suggests:
     testthat (>= 3.0.0),
-    qs
+    qs,
+    knitr,
+    rmarkdown
 Config/testthat/edition: 3
 LazyData: true
+VignetteBuilder: knitr

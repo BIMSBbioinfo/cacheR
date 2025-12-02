@@ -6,6 +6,7 @@ vignette: >
   %\VignetteIndexEntry{Reproducible and Fast RNA-seq Analysis with cacheR}
   %\VignetteEngine{knitr::rmarkdown}
   \usepackage[utf8]{inputenc}
+  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r setup, include=FALSE}
@@ -42,11 +43,13 @@ This document describes how to use the `cacheR` package to cache expensive steps
 - `DESeq2`  for differential expression analysis 
 - `dplyr`, `readr`  for data handling 
 
-```{r} 
-library(cacheR) 
-library(DESeq2) 
-library(dplyr) 
-library(readr) 
+```{r, echo = FALSE} 
+suppressPackageStartupMessages({
+        library(cacheR) 
+        library(DESeq2) 
+        library(dplyr) 
+        library(readr) 
+})
 ``` 
 
 ### 1.2 Working directories We use a temporary working directory for demonstration. In a real project, you would use a project-specific path.
@@ -123,7 +126,7 @@ for (i in seq_along(counts_list)) {
 We now wrap `read_counts_from_dir()` with `cacheFile()`. The key point is the argument `file_args = "count_dir"`: - `cacheR` will include the **number of files** in `count_dir` as part of the cache key. - If new files are added or removed, the hash changes and the function is re-run.
 
 ```{r} 
-cached_read_counts <- cacheFile( cache_dir = cache_dir, file_args = "count_dir" ) %@% function(count_dir, sample_table) { 
+cached_read_counts <- cacheR:::cacheFile( cache_dir = cache_dir ) %@% function(count_dir, sample_table) { 
     read_counts_from_dir(count_dir, sample_table) 
 }
 
@@ -133,12 +136,18 @@ cached_read_counts <- cacheFile( cache_dir = cache_dir, file_args = "count_dir" 
 
 ```{r}
 
-# First run: reads from disk and caches counts1 <- cached_read_counts(counts_dir, sample_table)
+# First run: reads from disk and caches 
 
-# Second run: same arguments and same files → uses cache counts2 <- 
+```{r}
+counts1 <- cached_read_counts(counts_dir, sample_table)
+```
+
+# Second run: same arguments and same files → uses cache 
 
 ```{r, eval=TRUE}
-cached_read_counts(counts_dir, sample_table) identical(counts1, counts2)
+counts2 <- cached_read_counts(counts_dir, sample_table) 
+
+identical(counts1, counts2)
 ```
 
 # should be TRUE
@@ -172,13 +181,23 @@ Constructing a `DESeqDataSet` can be computationally expensive for large matrice
 ### 5.1 Cached DESeqDataSet construction
 
 ```{r} 
-dds_from_counts <- cacheFile( cache_dir = cache_dir ) %@% function(counts_tbl, sample_table) { 
+dds_from_counts <- cacheR:::cacheFile( 
+        cache_dir = cache_dir ) %@% 
+        function(counts_tbl, sample_table) { 
        
         mat <- as.matrix(counts_tbl[, sample_table$sample_id]) 
+        
         rownames(mat) <- counts_tbl$gene_id 
+        
         coldata <- as.data.frame(sample_table) 
-        rownames(coldata) <- coldata$sample_id 
-        DESeqDataSetFromMatrix( countData = mat, colData = coldata, design = ~ condition ) 
+        
+        rownames(coldata) <- coldata$sample_id
+
+        DESeqDataSetFromMatrix( 
+                countData = mat, 
+                colData   = coldata, 
+                design    = ~condition 
+        ) 
         
 }
 
@@ -207,7 +226,7 @@ Fitting the DESeq model is often the slowest step in the pipeline.
 
 ```{r} 
 
-run_deseq <- cacheFile( cache_dir = cache_dir ) %@% function(dds) { 
+run_deseq <- cacheR:::cacheFile( cache_dir = cache_dir ) %@% function(dds) { 
         DESeq(dds) 
         } 
 dds_fit <- run_deseq(dds)
@@ -244,7 +263,7 @@ head(res[order(res$padj), ])
 
 GLOBAL_DIR <- counts_dir 
 
-hardcoded_fun <- cacheFile( cache_dir = cache_dir ) %@% function() {
+hardcoded_fun <- cacheR:::cacheFile( cache_dir = cache_dir ) %@% function() {
 
         # Using a global variable as directory path 
         n1 <- length(list.files(GLOBAL_DIR)) 

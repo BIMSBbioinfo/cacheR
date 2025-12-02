@@ -4,14 +4,17 @@
 [] renv integration
 
 [] write the web page
-[] test overhead
+[] test code overhead
+[] test code speed improvement
+
 
 [x] check for package version 
 [x] test for arguments
 [x] vignette - RNAseq example
 [x] test for files
-    - currently works for paths in function arguments and specific functions
-    - does not work for global variables
+
+[O] use standard R pipeline operator
+    - doesn't work - can only be postoperator, which doesn't look natural
 
 251125
 [x] use faster read-write function than RDS
