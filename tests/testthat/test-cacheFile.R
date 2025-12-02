@@ -339,3 +339,123 @@ test_that("cacheFile treats implicit defaults equal to explicit values", {
   expect_length(files_now, 2)
 })
 
+# tests/testthat/test-extensions.R
+# --------------------------------------------------------#
+# tests/testthat/test-extensions.R
+
+test_that("ignore_args excludes arguments from hash calculation", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  cache_dir <- file.path(tempdir(), "cache_ignore_args")
+  unlink(cache_dir, recursive = TRUE) # CLEAN START
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  f <- cacheFile(cache_dir, ignore_args = c("verbose", "n_cores")) %@% 
+    function(x, verbose = TRUE, n_cores = 1) {
+      if (verbose) message("Running...")
+      x * 2
+    }
+  
+  # 1. Run with defaults
+  res1 <- f(10, verbose = TRUE, n_cores = 1)
+  expect_equal(res1, 20)
+  
+  # 2. Run with different ignored args -> SHOULD HIT CACHE (file count stays 1)
+  files_before <- list.files(cache_dir)
+  expect_length(files_before, 1)
+  
+  res2 <- f(10, verbose = FALSE, n_cores = 4)
+  expect_equal(res2, 20)
+  
+  files_after <- list.files(cache_dir)
+  expect_identical(files_before, files_after)
+  
+  # 3. Changing a non-ignored arg -> NEW CACHE
+  res3 <- f(11, verbose = FALSE)
+  expect_length(list.files(cache_dir), 2)
+})
+
+test_that("Smart hashing detects file modification without new files (mtime check)", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  cache_dir <- file.path(tempdir(), "cache_mtime")
+  unlink(cache_dir, recursive = TRUE) # CLEAN START
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  data_dir <- file.path(tempdir(), "data_mtime")
+  unlink(data_dir, recursive = TRUE)
+  dir.create(data_dir)
+  
+  target_file <- file.path(data_dir, "test.txt")
+  writeLines("version1", target_file)
+  
+  f <- cacheFile(cache_dir) %@% function(path) {
+    readLines(file.path(path, "test.txt"))
+  }
+  
+  # 1. Initial run
+  res1 <- f(data_dir)
+  expect_equal(res1, "version1")
+  
+  # 2. Modify file content (updates mtime). 
+  # Sleep to ensure FS timestamp tick (some FS have 1s resolution)
+  Sys.sleep(1.2)
+  writeLines("version2", target_file)
+  
+  # 3. Second run -> Should detect change via mtime hash
+  res2 <- f(data_dir)
+  expect_equal(res2, "version2")
+  
+  expect_length(list.files(cache_dir), 2)
+})
+
+test_that("xxhash64 backend works and produces valid filenames", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  cache_dir <- file.path(tempdir(), "cache_xxhash")
+  unlink(cache_dir, recursive = TRUE) # CLEAN START
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  # We force backend="rds" to ensure the filename ends in .rds for the regex check
+  f <- cacheFile(cache_dir, algo = "xxhash64", backend = "rds") %@% function(x) x
+  
+  f(1)
+  
+  files <- list.files(cache_dir)
+  expect_length(files, 1)
+  
+  # Verify extension
+  expect_match(files[1], "\\.rds$")
+  
+  # Check that changing algo produces a DIFFERENT filename (new hash)
+  f_md5 <- cacheFile(cache_dir, algo = "md5", backend = "rds") %@% function(x) x
+  f_md5(1)
+  
+  expect_length(list.files(cache_dir), 2)
+})
+
+test_that("Empty directory handling works with mtime hashing", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  cache_dir <- file.path(tempdir(), "cache_empty")
+  unlink(cache_dir, recursive = TRUE) # CLEAN START (Fixes the "3 files" error)
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  empty_dir <- file.path(tempdir(), "empty_input")
+  unlink(empty_dir, recursive = TRUE)
+  dir.create(empty_dir, showWarnings = FALSE)
+  
+  f <- cacheFile(cache_dir) %@% function(p) length(list.files(p))
+  
+  # 1. Run on empty dir
+  expect_error(f(empty_dir), NA)
+  
+  # 2. Add file
+  file.create(file.path(empty_dir, "new.txt"))
+  
+  # 3. Run again (should detect change)
+  expect_error(f(empty_dir), NA)
+  
+  # Should have exactly 2 cache files
+  expect_length(list.files(cache_dir), 2)
+})

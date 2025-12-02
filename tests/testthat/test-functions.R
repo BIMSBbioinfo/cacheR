@@ -22,3 +22,4 @@ test_that(".find_package_deps handles internal functions with missing arguments 
   }
   expect_error(cacheR:::`.find_package_deps`(f_alist), NA)
 })
+

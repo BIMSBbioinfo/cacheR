@@ -1,268 +1,236 @@
 #' Create a disk-backed caching decorator for a function
 #'
 #' `cacheFile()` creates a decorator that caches function results to files
-#' in `cache_dir`, keyed by the function body and arguments. It also records
-#' parent-child relationships between cached calls so that a "cache tree"
-#' can be reconstructed.
+#' in `cache_dir`. It tracks arguments, the function body, and the state (mtime)
+#' of any directories passed as arguments.
 #'
-#' @param cache_dir Directory where cache files will be stored.
-#' @param backend   "rds" or "qs".
-#' @param file_args Character vector of argument names that should be treated
-#'                  as directory paths whose contents must be monitored.
+#' @param cache_dir   Directory where cache files will be stored.
+#' @param backend     Storage backend: "rds" (default) or "qs".
+#' @param file_args   Optional character vector of argument names to strictly treat as paths.
+#' @param ignore_args Character vector of argument names to exclude from the hash.
+#' @param algo        Hashing algorithm to use (default "xxhash64").
 #'
 #' @return A decorator object usable via `%@%`.
 #' @export
-cacheFile <- function(
-    cache_dir = NULL,
-    backend   = getOption("cacheR.backend", "rds"),
-    file_args = NULL  # optional manual file-args
-) decorator %@% function(f) {
+cacheFile <- function(cache_dir   = NULL,
+                      backend     = getOption("cacheR.backend", "rds"),
+                      file_args   = NULL,
+                      ignore_args = NULL,
+                      algo        = "xxhash64") decorator %@% function(f) {
 
-  ## ---- setup cache directory ----
+  ## -----------------------------------------------------------------------
+  ## 1. Setup Cache Directory
+  ## -----------------------------------------------------------------------
   if (is.null(cache_dir)) {
     cache_dir <- cacheR_default_dir()
   } else if (!file.exists(cache_dir)) {
     stop("the designated cache_dir does not exist")
   }
   cache_dir <- normalizePath(cache_dir, mustWork = FALSE)
+  backend   <- match.arg(backend, c("rds", "qs"))
 
-  backend <- match.arg(backend, c("rds", "qs"))
 
-  ## ---- static metadata from f ----------------------------------------
-  fbody      <- lapply(as.list(body(f)), as.character)
-  path_specs <- .find_path_specs(body(f))
+  ## -----------------------------------------------------------------------
+  ## 2. Static Metadata Analysis (Run once at decoration time)
+  ## -----------------------------------------------------------------------
+  fbody           <- lapply(as.list(body(f)), as.character)
+  path_specs      <- .find_path_specs(body(f))
   static_dirs_lit <- path_specs$literals
-  static_dirs_sym <- path_specs$symbols   # names used as paths in body
+  static_dirs_sym <- path_specs$symbols
+  pkg_deps        <- .find_package_deps(f)
 
-  pkg_deps <- .find_package_deps(f)       # may be NULL
+
+  ## -----------------------------------------------------------------------
+  ## 3. Helper: Directory State Hasher
+  ##    Calculates hash of file mtimes to detect content changes.
+  ## -----------------------------------------------------------------------
+  .get_dir_hash <- function(path) {
+    p <- normalizePath(path, mustWork = FALSE)
+    if (!dir.exists(p)) return(NA_character_)
+
+    files <- list.files(p, recursive = TRUE, full.names = TRUE)
+    if (length(files) == 0) return("empty_dir")
+
+    # Hash modification times (fast & effective for caching)
+    mtimes <- file.info(files)$mtime
+    digest::digest(mtimes, algo = algo)
+  }
 
 
-  ## ===================================================================
-  ## Wrapper
-  ## ===================================================================
+  ## =======================================================================
+  ## 4. The Runtime Wrapper
+  ##    Replaces the original function 'f'
+  ## =======================================================================
   function(..., .load = TRUE, .pkg_deps = pkg_deps) {
-    
-    # Capture the environment of the caller immediately.
+
     invoke_env <- parent.frame()
+    full_call  <- match.call(expand.dots = TRUE)
 
-    ## (1) capture wrapper call (dots expanded) -------------------------
-    full_call <- match.call(expand.dots = TRUE)
-    fname     <- full_call[[1]]
+    ## -- Step A: Safe Function Name Extraction ----------------------------
+    #  Robustly determine the function name for the cache filename.
+    #  Handles symbols (f), namespaced calls (pkg::f), or strings.
+    fname_raw <- full_call[[1]]
+    fname     <- "anon"
 
-    ## (2) strip internal args and retarget to f ------------------------
+    if (is.symbol(fname_raw)) {
+      fname <- as.character(fname_raw)
+    } else if (is.call(fname_raw) && length(fname_raw) == 3 &&
+               as.character(fname_raw[[1]]) %in% c("::", ":::")) {
+      fname <- as.character(fname_raw[[3]])
+    } else if (is.character(fname_raw)) {
+      fname <- fname_raw
+    }
+
+    ## -- Step B: Clean the Call & Match Arguments -------------------------
     call_f_list <- as.list(full_call)
 
+    # Strip internal wrapper arguments (.load, .pkg_deps)
     if (!is.null(names(call_f_list))) {
-      keep <- !names(call_f_list) %in% c(".load", ".pkg_deps")
-      keep[1L] <- TRUE  # keep function symbol
+      keep     <- !names(call_f_list) %in% c(".load", ".pkg_deps")
+      keep[1L] <- TRUE  # Always keep the function symbol
       call_f_list <- call_f_list[keep]
     }
 
-    call_f_list[[1]] <- quote(f)    # call f(...)
-    call_f <- as.call(call_f_list)
+    call_f_list[[1]] <- quote(f)
+    call_f           <- as.call(call_f_list)
 
-    ## (3) match call to f's formals ------------------------------------
-    call_matched <- match.call(definition = f, call = call_f, expand.dots = TRUE)
+    # Align arguments to function signature
+    call_matched  <- match.call(definition = f, call = call_f, expand.dots = TRUE)
     args_for_hash <- as.list(call_matched)[-1]
-    
-    # --- NEW: Inject Default Arguments ---
-    # This ensures f() hashes identically to f(x=default)
+
+
+    ## -- Step C: Inject Defaults & Filter Ignored Args --------------------
     f_formals <- formals(f)
     f_formals <- f_formals[names(f_formals) != "..."]
-    
-    missing_args <- setdiff(names(f_formals), names(args_for_hash))
-    if (length(missing_args) > 0) {
-      defaults <- f_formals[missing_args]
-      args_for_hash <- c(args_for_hash, defaults)
+
+    # Fill in default values not explicitly passed
+    missing <- setdiff(names(f_formals), names(args_for_hash))
+    if (length(missing) > 0) {
+      args_for_hash <- c(args_for_hash, f_formals[missing])
     }
-    
-    # Sort by name to guarantee consistent hashing order
+
+    # Remove arguments excluded by user (e.g. verbose=TRUE)
+    if (!is.null(ignore_args)) {
+      args_for_hash <- args_for_hash[!names(args_for_hash) %in% ignore_args]
+    }
+
+    # Sort to ensure f(a=1, b=2) == f(b=2, a=1)
     if (length(args_for_hash) > 0) {
       args_for_hash <- args_for_hash[order(names(args_for_hash))]
     }
 
-    # argument names actually used in this call (from the expanded hash list)
-    arg_exprs <- args_for_hash
-    arg_names_call <- names(arg_exprs)
 
+    ## -- Step D: Dynamic Argument Scanning --------------------------------
+    #  Check every argument; if it is a directory, include its state in hash.
+    dir_hashes_args <- character()
 
-    ## ================================================================
-    ## (4) ARGUMENT-BASED PATH COUNTS (runtime detection)
-    ## ================================================================
-    # We now scan ALL arguments that look like directories.
-    # 'file_args' can still be passed for documentation, but we don't
-    # strictly filter by it anymore.
-    
-    file_counts_args <- NULL
-    
-    if (length(arg_exprs)) {
-      fc <- lapply(seq_along(arg_exprs), function(i) {
-        expr <- arg_exprs[[i]]
-        
-        # Evaluate in the captured invocation environment
-        val  <- tryCatch(
-          eval(expr, envir = invoke_env),
-          error = function(e) NULL 
-        )
-        if (is.null(val)) return(integer(0L))
+    if (length(args_for_hash)) {
+      dh <- lapply(args_for_hash, function(expr) {
+        val <- tryCatch(eval(expr, envir = invoke_env), error = function(e) NULL)
 
-        # Only character-like values can be paths
-        if (!is.character(val)) return(integer(0L))
+        # Valid path check
+        if (is.null(val) || !is.character(val) || !length(val)) return(NULL)
+        dirs <- normalizePath(val, mustWork = FALSE)
+        dirs <- dirs[dir.exists(dirs)]
+        if (!length(dirs)) return(NULL)
 
-        dirs <- as.character(val)
-        if (!length(dirs)) return(integer(0L))
-
-        # Check validity
-        dirs_norm <- normalizePath(dirs, mustWork = FALSE)
-        ok <- dir.exists(dirs_norm)
-        if (!any(ok)) return(integer(0L))
-        
-        dirs_norm <- dirs_norm[ok]
-        u_dirs <- unique(dirs_norm)
-
-        counts <- vapply(u_dirs, function(d) {
-          length(list.files(d))
-        }, integer(1L))
-        
-        names(counts) <- u_dirs
-        counts
+        # Calculate mtime hash for each directory found
+        vapply(unique(dirs), .get_dir_hash, character(1L))
       })
 
-      if (length(fc)) {
-        file_counts_args <- unlist(fc, use.names = TRUE)
-      }
+      dh <- Filter(Negate(is.null), dh)
+      if (length(dh)) dir_hashes_args <- unlist(dh)
     }
 
 
-    ## ================================================================
-    ## (5) STATIC LITERAL PATH COUNTS
-    ## ================================================================
-    static_counts_lit <- NULL
-    if (length(static_dirs_lit) > 0L) {
-      static_counts_lit <- vapply(static_dirs_lit, function(d) {
-        p <- normalizePath(d, mustWork = FALSE)
-        if (!dir.exists(p)) return(0L)
-        length(list.files(p))
-      }, integer(1L))
-      names(static_counts_lit) <- static_dirs_lit
+    ## -- Step E: Static Path Scanning -------------------------------------
+    #  1. Literal paths found in code: list.files("data/raw")
+    static_hashes_lit <- character()
+    if (length(static_dirs_lit)) {
+      static_hashes_lit <- vapply(static_dirs_lit, .get_dir_hash, character(1L))
+      names(static_hashes_lit) <- static_dirs_lit
+    }
+
+    #  2. Symbolic paths found in code: list.files(MY_GLOBAL_DIR)
+    static_hashes_sym <- character()
+    if (length(static_dirs_sym)) {
+      static_hashes_sym <- vapply(static_dirs_sym, function(v) {
+        val <- tryCatch(get(v, envir = invoke_env), error = function(e) NULL)
+        if (!is.character(val)) return(NA_character_)
+
+        # A variable might contain multiple paths; aggregate their hashes
+        digest::digest(vapply(val, .get_dir_hash, character(1L)), algo = algo)
+      }, character(1L))
+      names(static_hashes_sym) <- paste0("sym:", static_dirs_sym)
     }
 
 
-    ## ================================================================
-    ## (6) STATIC GLOBAL SYMBOL PATH COUNTS
-    ## ================================================================
-    static_counts_sym <- NULL
-    if (length(static_dirs_sym) > 0L) {
-      static_counts_sym <- vapply(static_dirs_sym, function(vname) {
-        val <- tryCatch(
-          get(vname, envir = invoke_env, inherits = TRUE),
-          error = function(e) NULL
-        )
-        if (is.null(val)) return(NA_integer_)
-        
-        # Ensure it is a character vector before casting.
-        if (!is.character(val)) return(NA_integer_)
+    ## -- Step F: Build Master Hash ----------------------------------------
+    all_dir_hashes <- c(dir_hashes_args, static_hashes_lit, static_hashes_sym)
+    all_dir_hashes <- all_dir_hashes[!is.na(all_dir_hashes)]
 
-        dirs <- as.character(val)
-
-        counts <- vapply(dirs, function(d) {
-          p <- normalizePath(d, mustWork = FALSE)
-          if (!dir.exists(p)) return(0L)
-          length(list.files(p))
-        }, integer(1L))
-
-        sum(counts)
-      }, integer(1L))
-      names(static_counts_sym) <- paste0("sym:", static_dirs_sym)
+    if (length(all_dir_hashes)) {
+      all_dir_hashes <- all_dir_hashes[order(names(all_dir_hashes))]
     }
 
-
-    ## ================================================================
-    ## (7) MERGE ALL FILE COUNTS
-    ## ================================================================
-    all_counts <- c(file_counts_args, static_counts_lit, static_counts_sym)
-    all_counts <- all_counts[!is.na(all_counts)]
-
-    file_counts <- if (length(all_counts)) {
-      tapply(all_counts, names(all_counts), sum)
-    } else {
-      NULL
-    }
-
-
-    ## ================================================================
-    ## (8) BUILD HASH & OUTFILE
-    ## ================================================================
     hashlist <- list(
-      call        = args_for_hash,
-      body        = fbody,
-      file_counts = file_counts,
-      pkgs        = .pkg_deps
+      call       = args_for_hash,
+      body       = fbody,
+      dir_states = all_dir_hashes,
+      pkgs       = .pkg_deps
     )
 
-    args_hash <- digest::digest(hashlist, algo = "md5")
-
-    outfile <- file.path(
-      cache_dir,
-      paste(as.character(fname), args_hash, backend, sep = ".")
-    )
+    args_hash <- digest::digest(hashlist, algo = algo)
+    outfile   <- file.path(cache_dir, paste(fname, args_hash, backend, sep = "."))
 
 
-    ## ================================================================
-    ## (9) REGISTER NODE IN CACHE TREE
-    ## ================================================================
-    node_id <- paste(as.character(fname), args_hash, sep = ":")
+    ## -- Step G: Register Node & Execute ----------------------------------
+    node_id <- paste(fname, args_hash, sep = ":")
+    .cacheTree_register_node(node_id, fname, args_hash, outfile)
 
-    .cacheTree_register_node(
-      node_id   = node_id,
-      fname     = fname,
-      args_hash = args_hash,
-      outfile   = outfile
-    )
-
+    # Update call stack for dependency tracking
     .cacheTree_env$call_stack <- c(.cacheTree_env$call_stack, node_id)
     on.exit({
       .cacheTree_env$call_stack <- head(.cacheTree_env$call_stack, -1L)
     }, add = TRUE)
 
-
-    ## ================================================================
-    ## (10) LOAD OR EXECUTE + SAVE
-    ## ================================================================
+    # -- Cache Hit or Miss Logic --
     if (.load && file.exists(outfile)) {
       .cacheR_load(path = outfile)$dat
     } else {
       dat <- f(...)
-
       .cacheR_save(
-        object = list(
-          dat         = dat,
-          args        = args_for_hash,
-          body        = fbody,
-          file_counts = file_counts,
-          pkgs        = .pkg_deps
-        ),
-        path    = outfile,
-        backend = backend
+        list(dat        = dat,
+             args       = args_for_hash,
+             body       = fbody,
+             dir_states = all_dir_hashes,
+             pkgs       = .pkg_deps),
+        outfile,
+        backend
       )
       dat
     }
   }
 }
 
+
 #' @importFrom digest digest
 #' @importFrom utils packageVersion
 #' @importFrom codetools findGlobals
 NULL
 
-# --- helper: find path dependencies of a function -------------------
+
+## -------------------------------------------------------------------------
+## Helper: Find Path Dependencies (.find_path_specs)
+## Scans function body for calls to 'list.files', 'dir', etc.
+## -------------------------------------------------------------------------
 .find_path_specs <- function(expr) {
   literal_dirs <- character()
   symbol_dirs  <- character()
-
-  target_funs <- c("list.files", "dir", "list.dirs")
+  target_funs  <- c("list.files", "dir", "list.dirs")
 
   recurse <- function(sub_node, collect = FALSE) {
+    # If collecting, grab the string or symbol
     if (collect && is.symbol(sub_node)) {
       symbol_dirs <<- c(symbol_dirs, as.character(sub_node))
       return(invisible())
@@ -271,42 +239,31 @@ NULL
       literal_dirs <<- c(literal_dirs, as.character(sub_node))
       return(invisible())
     }
-
-    if (!is.language(sub_node)) {
-      return(invisible())
-    }
+    if (!is.language(sub_node)) return(invisible())
 
     if (is.call(sub_node)) {
-      head <- sub_node[[1L]]
+      head  <- sub_node[[1L]]
       fname <- NULL
 
+      # Detect function name (handle pkg::fun)
       if (is.symbol(head)) {
         fname <- as.character(head)
       } else if (is.call(head)) {
-        head_parts <- as.character(head)
-        if (length(head_parts) >= 3L &&
-            head_parts[1L] %in% c("::", ":::")) {
-          fname <- head_parts[3L]
-        }
+        hp <- as.character(head)
+        if (length(hp) >= 3 && hp[1] %in% c("::", ":::")) fname <- hp[3]
       }
 
       is_target <- !is.null(fname) && fname %in% target_funs
 
       if (is_target && !collect) {
+        # Found target function; find 'path' arg and recurse with collect=TRUE
         args      <- as.list(sub_node)[-1L]
         arg_names <- names(args)
-        target    <- NULL
+        target    <- if ("path" %in% arg_names) args[["path"]] else if (length(args) >= 1) args[[1L]] else NULL
 
-        if (!is.null(arg_names) && "path" %in% arg_names) {
-          target <- args[["path"]]
-        } else if (length(args) >= 1L) {
-          target <- args[[1L]]
-        }
+        if (!is.null(target)) recurse(target, collect = TRUE)
 
-        if (!is.null(target)) {
-          recurse(target, collect = TRUE)
-        }
-
+        # Recurse other args without collecting
         if (length(args)) {
           for (j in seq_along(args)) {
             if (!is.null(target) && identical(args[[j]], target)) next
@@ -314,132 +271,77 @@ NULL
           }
         }
       } else {
-        for (j in seq_along(sub_node)) {
-          recurse(sub_node[[j]], collect = collect)
-        }
+        # Standard recursion
+        for (j in seq_along(sub_node)) recurse(sub_node[[j]], collect = collect)
       }
     } else if (is.pairlist(sub_node)) {
-      for (j in seq_along(sub_node)) {
-        recurse(sub_node[[j]], collect = collect)
-      }
+      for (j in seq_along(sub_node)) recurse(sub_node[[j]], collect = collect)
     }
   }
 
-  tryCatch(
-    recurse(expr, collect = FALSE),
-    error = function(e) {
-      warning(".find_path_specs failed: ", conditionMessage(e))
-    }
-  )
-
-  list(
-    literals = unique(literal_dirs),
-    symbols  = unique(symbol_dirs)
-  )
+  tryCatch(recurse(expr), error = function(e) warning(".find_path_specs failed: ", conditionMessage(e)))
+  list(literals = unique(literal_dirs), symbols = unique(symbol_dirs))
 }
 
-# --- helper: find package dependencies of a function -------------------
+
+## -------------------------------------------------------------------------
+## Helper: Find Package Dependencies (.find_package_deps)
+## Scans body for 'pkg::fun' calls and uses codetools for globals.
+## -------------------------------------------------------------------------
 .find_package_deps <- function(fun) {
   stopifnot(is.function(fun))
-
-  pkgs <- character()
-
-  ## ---- 1) Explicit pkg::fun / pkg:::fun calls in the body ----------
-
+  pkgs       <- character()
   expr_stack <- list(body(fun))
-  
+
+  ## 1. AST Traversal for Explicit Calls
   while (length(expr_stack)) {
     node       <- expr_stack[[1L]]
     expr_stack <- expr_stack[-1L]
 
     if (is.call(node)) {
       head <- node[[1L]]
-
-      # detect pkg::fun or pkg:::fun
+      # Detect pkg::fun
       if (identical(head, quote(`::`)) || identical(head, quote(`:::`))) {
-        pkg_sym <- node[[2L]]
-        pkg <- as.character(pkg_sym)[1L]
-        pkgs <- c(pkgs, pkg)
+        pkgs <- c(pkgs, as.character(node[[2L]])[1L])
       }
-
-      # push all children of this call onto the stack
       children <- as.list(node)
-      
-      # --- FIX: Filter out missing arguments ---
-      valid <- vapply(children, function(x) !identical(x, quote(expr=)), logical(1))
-      children <- children[valid]
-
-      if (length(children)) {
-        expr_stack <- c(children, expr_stack)
-      }
+      # Filter missing args (quote(expr=)) to prevent crash
+      children <- children[vapply(children, function(x) !identical(x, quote(expr =)), logical(1))]
+      if (length(children)) expr_stack <- c(children, expr_stack)
 
     } else if (is.pairlist(node) || is.expression(node)) {
-      # Recurse into pairlists / expression objects
       children <- as.list(node)
-
-      # --- FIX: Filter out missing arguments ---
-      valid <- vapply(children, function(x) !identical(x, quote(expr=)), logical(1))
-      children <- children[valid]
-      
-      if (length(children)) {
-        expr_stack <- c(children, expr_stack)
-      }
+      # Filter missing args
+      children <- children[vapply(children, function(x) !identical(x, quote(expr =)), logical(1))]
+      if (length(children)) expr_stack <- c(children, expr_stack)
     }
   }
 
-  ## ---- 2) Unqualified functions via codetools::findGlobals ---------
+  ## 2. Codetools for Implicit Globals
   if (requireNamespace("codetools", quietly = TRUE)) {
     globs <- codetools::findGlobals(fun, merge = FALSE)
-    fun_names <- unique(globs$functions)
-
-    if (length(fun_names)) {
-      pkgs_globals <- unlist(
-        lapply(fun_names, function(sym) {
-          ga <- getAnywhere(sym)
-          if (!length(ga$where)) return(NULL)
-
-          ns <- ga$where[grepl("^package:", ga$where)]
-          if (!length(ns)) return(NULL)
-
-          sub("^package:", "", ns)
-        }),
-        use.names = FALSE
-      )
-
-      if (length(pkgs_globals)) {
-        pkgs <- c(pkgs, pkgs_globals)
-      }
+    if (length(globs$functions)) {
+      pkgs_globals <- unlist(lapply(globs$functions, function(sym) {
+        ga <- getAnywhere(sym)
+        if (!length(ga$where)) return(NULL)
+        ns <- ga$where[grepl("^package:", ga$where)]
+        if (!length(ns)) return(NULL)
+        sub("^package:", "", ns)
+      }), use.names = FALSE)
+      if (length(pkgs_globals)) pkgs <- c(pkgs, pkgs_globals)
     }
   }
 
-  ## ---- 3) Clean, drop base-ish, and attach versions ----------------
+  ## 3. Formatting & Versions
   if (!length(pkgs)) return(NULL)
-
   pkgs <- unique(pkgs)
+  pkgs <- setdiff(pkgs, c("base", "stats", "utils", "graphics", "grDevices", "methods"))
 
-  pkgs <- setdiff(pkgs, c(
-    "base", "stats", "utils",
-    "graphics", "grDevices", "methods"
-  ))
-  
-  # --- FIX: Handle empty package list after filtering ---
   if (!length(pkgs)) return(NULL)
 
-  versions <- vapply(
-    pkgs,
-    function(p) {
-      if (requireNamespace(p, quietly = TRUE)) {
-        as.character(utils::packageVersion(p))
-      } else {
-        NA_character_
-      }
-    },
-    character(1L)
-  )
+  versions <- vapply(pkgs, function(p) {
+    if (requireNamespace(p, quietly = TRUE)) as.character(utils::packageVersion(p)) else NA_character_
+  }, character(1L))
 
-  data.frame(
-    package = pkgs,
-    version = versions,
-    stringsAsFactors = FALSE
-  )
+  data.frame(package = pkgs, version = versions, stringsAsFactors = FALSE)
 }

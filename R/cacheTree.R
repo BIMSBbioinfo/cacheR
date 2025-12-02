@@ -74,6 +74,7 @@ cacheTree_nodes <- function() {
   )
 }
 
+# ------------------------------------------------------------ #
 cacheTree_for_file <- function(path) {
   np <- tryCatch(normalizePath(path, mustWork = FALSE),
                  error = function(e) path)
@@ -110,6 +111,7 @@ cacheTree_changed_files <- function() {
   out
 }
 
+# ------------------------------------------------------------ #
 #' Reset the cache tree state
 #'
 #' Clears all recorded parent-child relationships between cached calls.
@@ -155,6 +157,7 @@ cacheTree_load <- function(path) {
 
 .file_state_cache <- new.env(parent = emptyenv())
 
+# ------------------------------------------------------------ #
 probabilistic_file_hash <- function(
     path,
     block_size = 64 * 1024,
@@ -219,6 +222,7 @@ fast_file_hash <- function(
   h
 }
 
+# ------------------------------------------------------------ #
 track_file <- function(path) {
   node_id <- .cacheTree_current_node()
   if (is.na(node_id)) return(path)
@@ -248,6 +252,7 @@ track_file <- function(path) {
   path
 }
 
+# ------------------------------------------------------------ #
 cacheTree_changed_files <- function() {
   nodes <- cacheTree_nodes()
   out   <- list()
@@ -284,7 +289,7 @@ cacheTree_changed_files <- function() {
 }
 
 
-
+# ------------------------------------------------------------ #
 cacheR_default_dir <- function() {
   d <- getOption("cacheR.dir", file.path(getwd(), ".cacheR"))
 
@@ -293,4 +298,28 @@ cacheR_default_dir <- function() {
   }
 
   d
+}
+
+# ------------------------------------------------------------ #
+#' Prune old cache files
+#' @param days_old Delete files not accessed in X days
+#' @export
+cachePrune <- function(cache_dir, days_old = 30) {
+  files <- list.files(cache_dir, full.names = TRUE, pattern = "\\.(rds|qs)$")
+  if (length(files) == 0) return(invisible())
+  
+  # Get file info
+  info <- file.info(files)
+  
+  # Calculate age based on 'atime' (access time) if supported, else 'mtime'
+  # Note: atime updates depend on OS/filesystem settings (noatime mount option)
+  now <- Sys.time()
+  age <- difftime(now, info$mtime, units = "days")
+  
+  to_delete <- files[age > days_old]
+  
+  if (length(to_delete) > 0) {
+    message(sprintf("Deleting %d old cache files...", length(to_delete)))
+    unlink(to_delete)
+  }
 }
