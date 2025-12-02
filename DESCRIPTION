@@ -1,7 +1,7 @@
 Package: cacheR
 Type: Package
 Title: Recursive File-Based Caching With Call Tree Introspection
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: 
     person("Vedran", "Franke", 
            email = "vedran.franke@gmail.com", 
