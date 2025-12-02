@@ -46,13 +46,3 @@ outer(3)
 #> 8
 
 ```
-
-## 📝 Future Features
-
-- Automatic invalidation when function code changes
-
-- Cache visualization (cacheTree_graph())
-
-- File-space management (TTL, LRU cleanup)
-
-- Hashing improvements and deduplication
