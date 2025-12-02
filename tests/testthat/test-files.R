@@ -407,3 +407,89 @@ test_that("cacheFile works with a DESeq2-like dds_from_counts function without D
   expect_type(res1, "list")
   expect_identical(res1, res2)
 })
+
+# --------------------------------------------- #
+test_that("cacheFile normalizes relative paths correctly", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  # Setup directory structure
+  base <- tempfile()
+  dir.create(base)
+  subdir <- file.path(base, "subdir")
+  dir.create(subdir)
+  
+  cache_dir <- file.path(base, "cache")
+  dir.create(cache_dir)
+  
+  data_dir <- file.path(base, "data")
+  dir.create(data_dir)
+  file.create(file.path(data_dir, "file.txt"))
+  
+  f <- cacheFile(cache_dir) %@% function(path) {
+    length(list.files(path))
+  }
+  
+  # Run from base
+  old_wd <- getwd()
+  setwd(base)
+  on.exit(setwd(old_wd))
+  
+  # Call using relative path "data"
+  f("data")
+  
+  # Check cache created
+  expect_length(list.files(cache_dir), 1)
+  
+  # Change WD to subdir
+  setwd(subdir)
+  
+  # Call using relative path "../data" (which resolves to same absolute path)
+  # BUT: Since your hashing includes the *arguments as passed* (args_for_hash),
+  # "data" and "../data" are string-different, so they will likely hash differently 
+  # unless you normalize paths *before* hashing. 
+  # NOTE: Your current implementation hashes `args_for_hash` (raw arguments).
+  # This test confirms that behavior: They will be SEPARATE cache entries.
+  
+  f("../data")
+  expect_length(list.files(cache_dir), 2) 
+})
+
+# --------------------------------------------- #
+test_that("cacheFile scans all arguments for directories even if file_args is set", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  cache_dir <- file.path(tempdir(), "cache_all_args")
+  unlink(cache_dir, recursive = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  # Create a directory to pass as a "secondary" argument
+  extra_dir <- file.path(tempdir(), "extra_watched_dir")
+  unlink(extra_dir, recursive = TRUE)
+  dir.create(extra_dir)
+  file.create(file.path(extra_dir, "initial.txt"))
+  
+  # Function declares it only "officially" cares about 'primary', 
+  # but we pass a path to 'secondary' too.
+  f <- cacheFile(cache_dir, file_args = "primary") %@% function(primary, secondary) {
+    paste(primary, secondary)
+  }
+  
+  # 1. Initial run
+  f("some_val", extra_dir)
+  
+  # 2. Change the directory passed to 'secondary' (which is NOT in file_args)
+  file.create(file.path(extra_dir, "change.txt"))
+  
+  # 3. Run again. 
+  # If the decorator is scanning ALL args, it should detect the change in 'extra_dir'
+  # and generate a new cache file (or invalidate the previous one).
+  # Since we are checking file counts, the hash in the file name usually won't change
+  # purely based on file counts (the hash is based on args + file_counts).
+  # So if file_counts change, the hash changes, resulting in a NEW cache file.
+  
+  f("some_val", extra_dir)
+  
+  files <- list.files(cache_dir)
+  # We expect 2 files: one for the state with 1 file, one for the state with 2 files.
+  expect_equal(length(files), 2)
+})

@@ -260,3 +260,82 @@ test_that("cacheFile tracks multiple dir arguments and vector paths", {
   expect_equal(n2, 3L)
   expect_gt(n2, n1)
 })
+
+# --------------------------------------------------------#
+test_that("cacheFile works with 'qs' backend", {
+  skip_if_not_installed("qs")
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_qs_backend")
+  unlink(cache_dir, recursive = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE)
+
+  f <- cacheFile(cache_dir, backend = "qs") %@% function(x) {
+    x * 2
+  }
+
+  res <- f(10)
+  expect_equal(res, 20)
+
+  # Verify the file extension is actually .qs
+  files <- list.files(cache_dir)
+  expect_true(any(grepl("\\.qs$", files)))
+  
+  # Verify we can load it back manually
+  cache_path <- file.path(cache_dir, files[1])
+  loaded <- qs::qread(cache_path)
+  expect_equal(loaded$dat, 20)
+})
+
+# --------------------------------------------------------#
+test_that("cacheFile handles arguments that fail to evaluate", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  cache_dir <- file.path(tempdir(), "cache_error_arg")
+  dir.create(cache_dir, showWarnings = FALSE)
+
+  f <- cacheFile(cache_dir) %@% function(x) x
+  
+  # Passing a stop() as an argument
+  # The decorator attempts to evaluate args to check for paths.
+  # This ensures the decorator's tryCatch handles the error gracefully 
+  # and allows the error to bubble up from the actual function call (or the arg eval)
+  # rather than crashing inside the internal path checking logic.
+  
+  expect_error(f(stop("Boom")), "Boom")
+})
+
+# --------------------------------------------------------#
+test_that("cacheFile treats implicit defaults equal to explicit values", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  cache_dir <- file.path(tempdir(), "cache_implicit_defaults")
+  unlink(cache_dir, recursive = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  # Define a function with defaults
+  # Note: we use a default that evaluates to something simple (10)
+  f <- cacheFile(cache_dir) %@% function(a, b = 10) {
+    a + b
+  }
+  
+  # 1. Call using implicit default for 'b'
+  res1 <- f(a = 5)
+  expect_equal(res1, 15)
+  
+  # 2. Call using explicit value for 'b' (same as default)
+  res2 <- f(a = 5, b = 10)
+  expect_equal(res2, 15)
+  
+  # 3. Check the cache directory
+  # If hashes are identical, there should be exactly ONE cache file.
+  files <- list.files(cache_dir)
+  expect_length(files, 1)
+  
+  # 4. Verify that passing a different value creates a NEW file
+  res3 <- f(a = 5, b = 11)
+  expect_equal(res3, 16)
+  
+  files_now <- list.files(cache_dir)
+  expect_length(files_now, 2)
+})
+
