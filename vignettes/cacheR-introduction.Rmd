@@ -1,6 +1,9 @@
 ---
 title: "Introduction to cacheR"
-output: rmarkdown::html_vignette
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
 vignette: >
   %\VignetteIndexEntry{Introduction to cacheR}
   %\VignetteEngine{knitr::rmarkdown}
@@ -38,9 +41,6 @@ The main idea:
 ```{r}
 library(cacheR)
 ```
-
-# If needed:
-# library(decor)  # for the %@% operator
 
 For this vignette we’ll use a **temporary cache directory**:
 

@@ -1,7 +1,9 @@
 ---
 title: "Reproducible and Fast RNA-seq Analysis with cacheR"
-author: "Your Name"
-output: rmarkdown::html_vignette
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
 vignette: >
   %\VignetteIndexEntry{Reproducible and Fast RNA-seq Analysis with cacheR}
   %\VignetteEngine{knitr::rmarkdown}
@@ -150,11 +152,13 @@ counts2 <- cached_read_counts(counts_dir, sample_table)
 identical(counts1, counts2)
 ```
 
-# should be TRUE
+should be **TRUE**
 
 ---
 
-## 4. Automatic invalidation when new samples appear If you add a new sample and its counts file to `counts_dir`, the cache should be invalidated because the number of files in `count_dir` changed.
+## 4. Automatic invalidation when new samples appear 
+
+If you add a new sample and its counts file to `counts_dir`, the cache should be invalidated because the number of files in `count_dir` changed.
 
 ```{r} 
 new_id <- "sample5" 
@@ -181,9 +185,7 @@ Constructing a `DESeqDataSet` can be computationally expensive for large matrice
 ### 5.1 Cached DESeqDataSet construction
 
 ```{r} 
-dds_from_counts <- cacheR:::cacheFile( 
-        cache_dir = cache_dir ) %@% 
-        function(counts_tbl, sample_table) { 
+dds_from_counts <- cacheR:::cacheFile( cache_dir = cache_dir ) %@% function(counts_tbl, sample_table) { 
        
         mat <- as.matrix(counts_tbl[, sample_table$sample_id]) 
         
@@ -200,6 +202,7 @@ dds_from_counts <- cacheR:::cacheFile(
         ) 
         
 }
+
 
 ``` 
 
@@ -313,6 +316,8 @@ Very fast operations (simple filtering, small transforms) rarely benefit from ca
 
 ---
 
+
+## Session Info
 
 ```{r}
 sessionInfo()
