@@ -459,3 +459,38 @@ test_that("Empty directory handling works with mtime hashing", {
   # Should have exactly 2 cache files
   expect_length(list.files(cache_dir), 2)
 })
+
+# -------------------------------------------------------------------------
+# Test Feature 6: Environment Variable Tracking
+# -------------------------------------------------------------------------
+test_that("env_vars argument invalidates cache when env vars change", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  cache_dir <- file.path(tempdir(), "cache_env")
+  unlink(cache_dir, recursive = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  # Function depends on "MY_APP_MODE"
+  f <- cacheFile(cache_dir, env_vars = "MY_APP_MODE") %@% function(x) {
+    mode <- Sys.getenv("MY_APP_MODE", "DEFAULT")
+    paste(x, mode)
+  }
+  
+  # 1. Run with PROD
+  Sys.setenv(MY_APP_MODE = "PROD")
+  on.exit(Sys.unsetenv("MY_APP_MODE"), add = TRUE)
+  
+  res1 <- f("State:")
+  expect_equal(res1, "State: PROD")
+  
+  # 2. Run with same Env -> Cache Hit
+  res2 <- f("State:")
+  expect_equal(res2, "State: PROD")
+  expect_length(list.files(cache_dir), 1)
+  
+  # 3. Run with DEV -> Cache Miss
+  Sys.setenv(MY_APP_MODE = "DEV")
+  res3 <- f("State:")
+  expect_equal(res3, "State: DEV")
+  expect_length(list.files(cache_dir), 2)
+})

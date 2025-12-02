@@ -493,3 +493,36 @@ test_that("cacheFile scans all arguments for directories even if file_args is se
   # We expect 2 files: one for the state with 1 file, one for the state with 2 files.
   expect_equal(length(files), 2)
 })
+
+# -------------------------------------------------------------------------
+# Test Feature 3: Concurrency Safety (File Locking)
+# -------------------------------------------------------------------------
+test_that("file locking logic runs without error", {
+  skip_if_not_installed("filelock")
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  cache_dir <- file.path(tempdir(), "cache_lock")
+  unlink(cache_dir, recursive = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  f <- cacheFile(cache_dir) %@% function(x) x
+  
+  # It's difficult to verify true concurrency in a single unit test without
+  # spawning external processes, but we can verify the locking code path executes
+  # correctly and cleans up lockfiles.
+  
+  # 1. First execution (creates lock, writes file, removes lock)
+  f(1)
+  
+  files <- list.files(cache_dir)
+  
+  # Should contain the .rds file
+  expect_true(any(grepl("\\.rds$", files)))
+  
+  # Should NOT contain the .lock file (cleanup verification)
+  expect_false(any(grepl("\\.lock$", files)))
+  
+  # 2. Verify we can call it again
+  f(1)
+  expect_length(list.files(cache_dir, pattern = "\\.rds$"), 1)
+})
