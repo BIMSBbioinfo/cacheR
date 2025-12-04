@@ -3,7 +3,7 @@
 
 # cacheR <img src="https://img.shields.io/badge/status-experimental-orange" align="right"/>
 
-`cacheR` tracks your data and code so you don't have to
+**cacheR** tracks your data and code so you don't have to
 
 ## What does cacheR do?
 
