@@ -20,10 +20,10 @@ Depends:
 Imports:
     digest,
     tools,
-    codetools
+    codetools,
+    qs
 Suggests:
     testthat (>= 3.0.0),
-    qs,
     knitr,
     rmarkdown
 Config/testthat/edition: 3
