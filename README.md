@@ -3,21 +3,22 @@
 
 # cacheR <img src="https://img.shields.io/badge/status-experimental-orange" align="right"/>
 
-`cacheR` provides **recursive, file-based function caching** for R, with the unique
-ability to record **parent–child relationships** between cached calls.
+`cacheR` tracks your data and code so you don't have to
 
-This is useful for:
+## What does cacheR do?
 
-- Building provenance graphs  
-- Debugging nested function calls  
-- Understanding how a function tree produces a result  
+It automatically checks for changes in code and input data and re-runs the code if necessary.
+
+It's like snakemake/nextflow, but on the fly
+
+## What is it useful for?
+
+- Keeping the analysis up to date
+- Saving time
+- Not using obsolete results 
 - Reusing heavy computations safely and transparently  
 
-The package introduces:
-
-- `cacheFile()` — a caching decorator  
-- `%@%` — an operator for applying decorators  
-- `cacheTree_*()` — functions for inspecting the cache tree  
+ 
 
 ---
 
@@ -29,7 +30,13 @@ The package introduces:
 remotes::install_github("BIMSBbioinfo/cacheR")
 ```
 
-Basic usage 
+### Basic usage 
+
+The package introduces:
+
+- `cacheFile()` — a caching decorator  
+- `%@%` — an operator for applying decorators  
+- `cacheTree_*()` — functions for inspecting the cache tree 
 
 ```
 library(cacheR)
