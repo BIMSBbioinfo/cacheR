@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Reproducible and Fast RNA-seq Analysis with cacheR</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+<script>// Hide empty <a> tag within highlighted CodeBlock for screen reader accessibility (see https://github.com/jgm/pandoc/issues/6352#issuecomment-626106786) -->
+// v0.0.1
+// Written by JooYoung Seo (jooyoung@psu.edu) and Atsushi Yasumoto on June 1st, 2020.
+
+document.addEventListener('DOMContentLoaded', function() {
+  const codeList = document.getElementsByClassName("sourceCode");
+  for (var i = 0; i < codeList.length; i++) {
+    var linkList = codeList[i].getElementsByTagName('a');
+    for (var j = 0; j < linkList.length; j++) {
+      if (linkList[j].innerHTML === "") {
+        linkList[j].setAttribute('aria-hidden', 'true');
+      }
+    }
+  }
+});
+</script>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+
+<style type="text/css">
+  code {
+    white-space: pre;
+  }
+  .sourceCode {
+    overflow: visible;
+  }
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Reproducible and Fast RNA-seq Analysis with cacheR</h1>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#cacher-rna-seq-caching-example">cacheR RNA-seq Caching Example</a>
+<ul>
+<li><a href="#setup">1. Setup</a></li>
+<li><a href="#simulated-rna-seq-data-to-keep-the-example-self-contained-we-simulate-small-count-tables-as-if-they-were-generated-by-tools-such-as-featurecounts-or-htseq-count.">2. Simulated RNA-seq data To keep the example self-contained, we simulate small count tables as if they were generated by tools such as <code>featureCounts</code> or <code>htseq-count</code>.</a></li>
+<li><a href="#reading-count-files-from-a-directory">3. Reading count files from a directory</a></li>
+</ul></li>
+<li><a href="#second-run-same-arguments-and-same-files-uses-cache">Second run: same arguments and same files → uses cache</a>
+<ul>
+<li><a href="#automatic-invalidation-when-new-samples-appear">4. Automatic invalidation when new samples appear</a></li>
+<li><a href="#building-a-deseqdataset-with-caching">5. Building a DESeqDataSet with caching</a></li>
+<li><a href="#caching-the-deseq-model-fit">6. Caching the DESeq model fit</a></li>
+<li><a href="#tracking-hardcoded-directories-and-global-variables">7. Tracking hardcoded directories and global variables</a></li>
+<li><a href="#practical-notes">8. Practical notes</a></li>
+<li><a href="#session-info">Session Info</a></li>
+</ul></li>
+</ul>
+</div>
+
+<div id="cacher-rna-seq-caching-example" class="section level1">
+<h1>cacheR RNA-seq Caching Example</h1>
+<p>This document describes how to use the <code>cacheR</code> package to cache expensive steps in an RNA-seq data analysis pipeline. It focuses on:</p>
+<ul>
+<li><p>Importing RNA-seq count files from disk</p></li>
+<li><p>Building a <code>DESeqDataSet</code></p></li>
+<li><p>Fitting a DESeq model</p></li>
+<li><p>Automatically invalidating caches when:</p></li>
+<li><p>Function arguments change</p></li>
+<li><p>Function code changes</p></li>
+<li><p>The number of files in key directories changes</p></li>
+<li><p>Hardcoded and global-variable paths change The examples assume you are working inside an R package or project that includes the <code>cacheFile()</code> decorator from <code>cacheR</code>.</p></li>
+</ul>
+<hr />
+<div id="setup" class="section level2">
+<h2>1. Setup</h2>
+<div id="required-packages-you-will-need" class="section level3">
+<h3>1.1 Required packages You will need:</h3>
+<ul>
+<li><code>cacheR</code> for caching and dependency tracking</li>
+<li><code>DESeq2</code> for differential expression analysis</li>
+<li><code>dplyr</code>, <code>readr</code> for data handling</li>
+</ul>
+</div>
+<div id="working-directories-we-use-a-temporary-working-directory-for-demonstration.-in-a-real-project-you-would-use-a-project-specific-path." class="section level3">
+<h3>1.2 Working directories We use a temporary working directory for demonstration. In a real project, you would use a project-specific path.</h3>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a>work_dir &lt;-<span class="st"> </span><span class="kw">file.path</span>(<span class="kw">tempdir</span>(), <span class="st">&quot;cacheR_rnaseq_vignette&quot;</span>) </span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a><span class="kw">dir.create</span>(work_dir, <span class="dt">recursive =</span> <span class="ot">TRUE</span>, <span class="dt">showWarnings =</span> <span class="ot">FALSE</span>) </span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true"></a></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true"></a>counts_dir &lt;-<span class="st"> </span><span class="kw">file.path</span>(work_dir, <span class="st">&quot;counts&quot;</span>) </span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true"></a><span class="kw">dir.create</span>(counts_dir, <span class="dt">recursive =</span> <span class="ot">TRUE</span>, <span class="dt">showWarnings =</span> <span class="ot">FALSE</span>) </span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true"></a>cache_dir &lt;-<span class="st"> </span><span class="kw">file.path</span>(work_dir, <span class="st">&quot;cache&quot;</span>) </span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true"></a><span class="kw">dir.create</span>(cache_dir, <span class="dt">recursive =</span> <span class="ot">TRUE</span>, <span class="dt">showWarnings =</span> <span class="ot">FALSE</span>)</span></code></pre></div>
+<hr />
+</div>
+</div>
+<div id="simulated-rna-seq-data-to-keep-the-example-self-contained-we-simulate-small-count-tables-as-if-they-were-generated-by-tools-such-as-featurecounts-or-htseq-count." class="section level2">
+<h2>2. Simulated RNA-seq data To keep the example self-contained, we simulate small count tables as if they were generated by tools such as <code>featureCounts</code> or <code>htseq-count</code>.</h2>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a><span class="kw">set.seed</span>(<span class="dv">1</span>) </span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a>genes &lt;-<span class="st"> </span><span class="kw">paste0</span>(<span class="st">&quot;Gene&quot;</span>, <span class="kw">sprintf</span>(<span class="st">&quot;%03d&quot;</span>, <span class="dv">1</span><span class="op">:</span><span class="dv">500</span>)) </span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true"></a>simulate_sample &lt;-<span class="st"> </span><span class="cf">function</span>(sample_id, <span class="dt">n_genes =</span> <span class="kw">length</span>(genes)) { </span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true"></a>    <span class="kw">data.frame</span>( </span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true"></a>        <span class="dt">gene_id =</span> genes, </span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true"></a>        <span class="dt">count =</span> <span class="kw">rpois</span>(n_genes, <span class="dt">lambda =</span> <span class="kw">sample</span>(<span class="dv">10</span><span class="op">:</span><span class="dv">1000</span>, <span class="dv">1</span>)), <span class="dt">stringsAsFactors =</span> <span class="ot">FALSE</span> ) </span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true"></a>} </span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true"></a>        </span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true"></a>sample_ids &lt;-<span class="st"> </span><span class="kw">paste0</span>(<span class="st">&quot;sample&quot;</span>, <span class="dv">1</span><span class="op">:</span><span class="dv">4</span>) </span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true"></a></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true"></a><span class="cf">for</span> (sid <span class="cf">in</span> sample_ids) { </span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true"></a>    tab &lt;-<span class="st"> </span><span class="kw">simulate_sample</span>(sid) </span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true"></a>    readr<span class="op">::</span><span class="kw">write_tsv</span>(tab, <span class="kw">file.path</span>(counts_dir, <span class="kw">paste0</span>(sid, <span class="st">&quot;_counts.tsv&quot;</span>)) ) </span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true"></a>} </span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true"></a>sample_table &lt;-<span class="st"> </span><span class="kw">data.frame</span>( <span class="dt">sample_id =</span> sample_ids, <span class="dt">condition =</span> <span class="kw">rep</span>(<span class="kw">c</span>(<span class="st">&quot;A&quot;</span>, <span class="st">&quot;B&quot;</span>), <span class="dt">each =</span> <span class="dv">2</span>), <span class="dt">stringsAsFactors =</span> <span class="ot">FALSE</span> )</span></code></pre></div>
+<p>At this point: - <code>counts_dir</code> contains 4 tab-separated count files, one per sample. - <code>sample_table</code> describes the experimental design (two conditions: A and B).</p>
+<hr />
+</div>
+<div id="reading-count-files-from-a-directory" class="section level2">
+<h2>3. Reading count files from a directory</h2>
+<div id="uncached-helper-function" class="section level3">
+<h3>3.1 Uncached helper function</h3>
+<p>The following function reads all <code>*_counts.tsv</code> files from a directory, merges them on <code>gene_id</code>, and orders columns to match the sample table.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true"></a></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true"></a>read_counts_from_dir &lt;-<span class="st"> </span><span class="cf">function</span>(count_dir, sample_table) { </span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true"></a>files &lt;-<span class="st"> </span><span class="kw">list.files</span>(count_dir, <span class="dt">pattern =</span> <span class="st">&quot;_counts</span><span class="ch">\\</span><span class="st">.tsv$&quot;</span>, <span class="dt">full.names =</span> <span class="ot">TRUE</span>) </span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true"></a><span class="cf">if</span> (<span class="kw">length</span>(files) <span class="op">==</span><span class="st"> </span>0L) { </span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true"></a>        <span class="kw">stop</span>(<span class="st">&quot;No count files found in: &quot;</span>, count_dir) </span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true"></a>} </span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true"></a>sample_ids &lt;-<span class="st"> </span><span class="kw">gsub</span>(<span class="st">&quot;_counts</span><span class="ch">\\</span><span class="st">.tsv$&quot;</span>, <span class="st">&quot;&quot;</span>, <span class="kw">basename</span>(files)) </span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true"></a>counts_list &lt;-<span class="st"> </span><span class="kw">lapply</span>(files, <span class="cf">function</span>(f) { </span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true"></a>        readr<span class="op">::</span><span class="kw">read_tsv</span>(f, <span class="dt">show_col_types =</span> <span class="ot">FALSE</span>) </span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true"></a>}) </span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true"></a>merged &lt;-<span class="st"> </span>counts_list[[<span class="dv">1</span>]][, <span class="st">&quot;gene_id&quot;</span>, drop =<span class="st"> </span><span class="ot">FALSE</span>] </span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="kw">seq_along</span>(counts_list)) { </span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true"></a>        merged[[sample_ids[i]]] &lt;-<span class="st"> </span>counts_list[[i]]<span class="op">$</span>count } </span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true"></a>        merged &lt;-<span class="st"> </span>merged[, <span class="kw">c</span>(<span class="st">&quot;gene_id&quot;</span>, sample_table<span class="op">$</span>sample_id), drop =<span class="st"> </span><span class="ot">FALSE</span>] </span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true"></a>        merged </span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true"></a>}</span></code></pre></div>
+</div>
+<div id="caching-the-file-import-step" class="section level3">
+<h3>3.2 Caching the file import step</h3>
+<p>We now wrap <code>read_counts_from_dir()</code> with <code>cacheFile()</code>. The key point is the argument <code>file_args = &quot;count_dir&quot;</code>: - <code>cacheR</code> will include the <strong>number of files</strong> in <code>count_dir</code> as part of the cache key. - If new files are added or removed, the hash changes and the function is re-run.</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true"></a>cached_read_counts &lt;-<span class="st"> </span>cacheR<span class="op">:::</span><span class="kw">cacheFile</span>( <span class="dt">cache_dir =</span> cache_dir ) <span class="op">%@%</span><span class="st"> </span><span class="cf">function</span>(count_dir, sample_table) { </span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true"></a>    <span class="kw">read_counts_from_dir</span>(count_dir, sample_table) </span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true"></a>}</span></code></pre></div>
+</div>
+<div id="first-and-second-run" class="section level3">
+<h3>3.3 First and second run</h3>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true"></a></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true"></a><span class="co"># First run: reads from disk and caches </span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true"></a>counts1 &lt;-<span class="st"> </span><span class="kw">cached_read_counts</span>(counts_dir, sample_table)</span></code></pre></div>
+</div>
+</div>
+</div>
+<div id="second-run-same-arguments-and-same-files-uses-cache" class="section level1">
+<h1>Second run: same arguments and same files → uses cache</h1>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true"></a>counts2 &lt;-<span class="st"> </span><span class="kw">cached_read_counts</span>(counts_dir, sample_table) </span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true"></a></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true"></a><span class="kw">identical</span>(counts1, counts2)</span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>should be <strong>TRUE</strong></p>
+<hr />
+<div id="automatic-invalidation-when-new-samples-appear" class="section level2">
+<h2>4. Automatic invalidation when new samples appear</h2>
+<p>If you add a new sample and its counts file to <code>counts_dir</code>, the cache should be invalidated because the number of files in <code>count_dir</code> changed.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true"></a>new_id &lt;-<span class="st"> &quot;sample5&quot;</span> </span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true"></a>sample_table2 &lt;-<span class="st"> </span><span class="kw">bind_rows</span>( sample_table, <span class="kw">data.frame</span>(<span class="dt">sample_id =</span> new_id, <span class="dt">condition =</span> <span class="st">&quot;A&quot;</span>) ) </span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true"></a>tab_new &lt;-<span class="st"> </span><span class="kw">simulate_sample</span>(new_id) </span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true"></a>readr<span class="op">::</span><span class="kw">write_tsv</span>(tab_new, <span class="kw">file.path</span>(counts_dir, <span class="kw">paste0</span>(new_id, <span class="st">&quot;_counts.tsv&quot;</span>)) ) </span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true"></a>counts3 &lt;-<span class="st"> </span><span class="kw">cached_read_counts</span>(counts_dir, sample_table2) </span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true"></a></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true"></a><span class="kw">dim</span>(counts1)</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true"></a><span class="co">#&gt; [1] 500   5</span></span></code></pre></div>
+<p>dimensions before adding sample5 <code>dim(counts3)</code></p>
+<p>dimensions after adding sample5</p>
+<p>Key behavior: - <code>cached_read_counts()</code> detects that <code>counts_dir</code> now has 5 files instead of 4. - The cache key changes, so the function is re-run. - <code>counts3</code> now contains the additional <code>sample5</code> column.</p>
+<hr />
+</div>
+<div id="building-a-deseqdataset-with-caching" class="section level2">
+<h2>5. Building a DESeqDataSet with caching</h2>
+<p>Constructing a <code>DESeqDataSet</code> can be computationally expensive for large matrices. We can cache this step as well.</p>
+<div id="cached-deseqdataset-construction" class="section level3">
+<h3>5.1 Cached DESeqDataSet construction</h3>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true"></a>dds_from_counts &lt;-<span class="st"> </span>cacheR<span class="op">:::</span><span class="kw">cacheFile</span>( <span class="dt">cache_dir =</span> cache_dir ) <span class="op">%@%</span><span class="st"> </span><span class="cf">function</span>(counts_tbl, sample_table) { </span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true"></a>       </span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true"></a>        mat &lt;-<span class="st"> </span><span class="kw">as.matrix</span>(counts_tbl[, sample_table<span class="op">$</span>sample_id]) </span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true"></a>        </span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true"></a>        <span class="kw">rownames</span>(mat) &lt;-<span class="st"> </span>counts_tbl<span class="op">$</span>gene_id </span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true"></a>        </span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true"></a>        coldata &lt;-<span class="st"> </span><span class="kw">as.data.frame</span>(sample_table) </span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true"></a>        </span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true"></a>        <span class="kw">rownames</span>(coldata) &lt;-<span class="st"> </span>coldata<span class="op">$</span>sample_id</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true"></a></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true"></a>        <span class="kw">DESeqDataSetFromMatrix</span>( </span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true"></a>                <span class="dt">countData =</span> mat, </span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true"></a>                <span class="dt">colData   =</span> coldata, </span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true"></a>                <span class="dt">design    =</span> <span class="op">~</span>condition </span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true"></a>        ) </span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true"></a>        </span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true"></a>}</span></code></pre></div>
+</div>
+<div id="usage" class="section level3">
+<h3>5.2 Usage</h3>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true"></a></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true"></a>dds &lt;-<span class="st"> </span><span class="kw">dds_from_counts</span>(counts3, sample_table2)</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true"></a><span class="co">#&gt; converting counts to integer mode</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true"></a><span class="co">#&gt; Warning in DESeqDataSet(se, design = design, ignoreRank): some variables in</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true"></a><span class="co">#&gt; design formula are characters, converting to factors</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true"></a>dds</span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true"></a><span class="co">#&gt; class: DESeqDataSet </span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true"></a><span class="co">#&gt; dim: 500 5 </span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true"></a><span class="co">#&gt; metadata(1): version</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true"></a><span class="co">#&gt; assays(1): counts</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true"></a><span class="co">#&gt; rownames(500): Gene001 Gene002 ... Gene499 Gene500</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true"></a><span class="co">#&gt; rowData names(0):</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true"></a><span class="co">#&gt; colnames(5): sample1 sample2 sample3 sample4 sample5</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true"></a><span class="co">#&gt; colData names(2): sample_id condition</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true"></a></span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true"></a><span class="co"># standard DESeq2 object</span></span></code></pre></div>
+<p>Re-running <code>dds_from_counts(counts3, sample_table2)</code> with unchanged inputs will load from the cache instead of recomputing.</p>
+<hr />
+</div>
+</div>
+<div id="caching-the-deseq-model-fit" class="section level2">
+<h2>6. Caching the DESeq model fit</h2>
+<p>Fitting the DESeq model is often the slowest step in the pipeline.</p>
+<div id="cached-deseq-fit" class="section level3">
+<h3>6.1 Cached DESeq fit</h3>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true"></a></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true"></a>run_deseq &lt;-<span class="st"> </span>cacheR<span class="op">:::</span><span class="kw">cacheFile</span>( <span class="dt">cache_dir =</span> cache_dir ) <span class="op">%@%</span><span class="st"> </span><span class="cf">function</span>(dds) { </span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true"></a>        <span class="kw">DESeq</span>(dds) </span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true"></a>        } </span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true"></a>dds_fit &lt;-<span class="st"> </span><span class="kw">run_deseq</span>(dds)</span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true"></a><span class="co">#&gt; estimating size factors</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true"></a><span class="co">#&gt; estimating dispersions</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true"></a><span class="co">#&gt; gene-wise dispersion estimates</span></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true"></a><span class="co">#&gt; mean-dispersion relationship</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true"></a><span class="co">#&gt; -- note: fitType=&#39;parametric&#39;, but the dispersion trend was not well captured by the</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true"></a><span class="co">#&gt;    function: y = a/x + b, and a local regression fit was automatically substituted.</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true"></a><span class="co">#&gt;    specify fitType=&#39;local&#39; or &#39;mean&#39; to avoid this message next time.</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true"></a><span class="co">#&gt; final dispersion estimates</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true"></a><span class="co">#&gt; fitting model and testing</span></span></code></pre></div>
+<p>If you run <code>run_deseq(dds)</code> again with the same <code>dds</code>, it will use the cached result rather than re-fitting the model.</p>
+<hr />
+</div>
+<div id="extracting-results-extracting-results-from-the-fitted-model-is-typically-fast-so-you-may-or-may-not-want-to-cache-it" class="section level3">
+<h3>6.2 Extracting results Extracting results from the fitted model is typically fast, so you may or may not want to cache it:</h3>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true"></a></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true"></a>res &lt;-<span class="st"> </span><span class="kw">results</span>(dds_fit, <span class="dt">contrast =</span> <span class="kw">c</span>(<span class="st">&quot;condition&quot;</span>, <span class="st">&quot;B&quot;</span>, <span class="st">&quot;A&quot;</span>)) </span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true"></a></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true"></a><span class="kw">head</span>(res[<span class="kw">order</span>(res<span class="op">$</span>padj), ])</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true"></a><span class="co">#&gt; log2 fold change (MLE): condition B vs A </span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true"></a><span class="co">#&gt; Wald test p-value: condition B vs A </span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true"></a><span class="co">#&gt; DataFrame with 6 rows and 6 columns</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true"></a><span class="co">#&gt;          baseMean log2FoldChange     lfcSE        stat    pvalue      padj</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true"></a><span class="co">#&gt;         &lt;numeric&gt;      &lt;numeric&gt; &lt;numeric&gt;   &lt;numeric&gt; &lt;numeric&gt; &lt;numeric&gt;</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true"></a><span class="co">#&gt; Gene001   322.789    0.047031744  0.107328  0.43820723  0.661236  0.993707</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true"></a><span class="co">#&gt; Gene002   336.819   -0.003691388  0.111411 -0.03313292  0.973569  0.993707</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true"></a><span class="co">#&gt; Gene003   338.658   -0.015187950  0.108704 -0.13971790  0.888883  0.993707</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true"></a><span class="co">#&gt; Gene004   328.872    0.053297936  0.108026  0.49337992  0.621744  0.993707</span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true"></a><span class="co">#&gt; Gene005   329.051   -0.000984009  0.106326 -0.00925464  0.992616  0.993707</span></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true"></a><span class="co">#&gt; Gene006   325.634   -0.040019410  0.103535 -0.38653002  0.699104  0.993707</span></span></code></pre></div>
+<hr />
+</div>
+</div>
+<div id="tracking-hardcoded-directories-and-global-variables" class="section level2">
+<h2>7. Tracking hardcoded directories and global variables</h2>
+<p><code>cacheR</code> can also track directories that are not passed as function arguments, but appear in:</p>
+<ul>
+<li><p>Hardcoded calls like <code>list.files(&quot;/path/to/data&quot;)</code></p></li>
+<li><p>Global variable calls like <code>dir(GLOBAL_DIR)</code></p></li>
+</ul>
+<div id="global-directory-example" class="section level3">
+<h3>7.1 Global directory example</h3>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true"></a></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true"></a>GLOBAL_DIR &lt;-<span class="st"> </span>counts_dir </span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true"></a></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true"></a>hardcoded_fun &lt;-<span class="st"> </span>cacheR<span class="op">:::</span><span class="kw">cacheFile</span>( <span class="dt">cache_dir =</span> cache_dir ) <span class="op">%@%</span><span class="st"> </span><span class="cf">function</span>() {</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true"></a></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true"></a>        <span class="co"># Using a global variable as directory path </span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true"></a>        n1 &lt;-<span class="st"> </span><span class="kw">length</span>(<span class="kw">list.files</span>(GLOBAL_DIR)) </span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true"></a>        n2 &lt;-<span class="st"> </span><span class="kw">length</span>(<span class="kw">dir</span>(GLOBAL_DIR)) </span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true"></a>        <span class="kw">c</span>(<span class="dt">literal =</span> n1, <span class="dt">global =</span> n2) </span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true"></a>}</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true"></a></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true"></a><span class="co"># First call: computes and caches </span></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true"></a></span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true"></a><span class="kw">hardcoded_fun</span>()</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true"></a><span class="co">#&gt; literal  global </span></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true"></a><span class="co">#&gt;       5       5</span></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true"></a></span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true"></a><span class="co"># Add another file to the directory </span></span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true"></a></span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true"></a>extra &lt;-<span class="st"> </span><span class="kw">simulate_sample</span>(<span class="st">&quot;extra&quot;</span>) </span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true"></a></span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true"></a>readr<span class="op">::</span><span class="kw">write_tsv</span>(extra, <span class="kw">file.path</span>(GLOBAL_DIR, <span class="st">&quot;extra_counts.tsv&quot;</span>) )</span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true"></a></span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true"></a><span class="co"># Second call: cache is invalidated and recomputed </span></span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true"></a></span>
+<span id="cb13-26"><a href="#cb13-26" aria-hidden="true"></a><span class="kw">hardcoded_fun</span>()</span>
+<span id="cb13-27"><a href="#cb13-27" aria-hidden="true"></a><span class="co">#&gt; literal  global </span></span>
+<span id="cb13-28"><a href="#cb13-28" aria-hidden="true"></a><span class="co">#&gt;       6       6</span></span></code></pre></div>
+<p>Here: - The function body uses <code>GLOBAL_DIR</code> inside <code>list.files()</code> and <code>dir()</code>. - <code>cacheR</code> inspects the function body, detects these directory usages, and includes the corresponding file counts in the cache key. - When a new file is added to <code>GLOBAL_DIR</code>, the cache entry becomes invalid, and <code>hardcoded_fun()</code> is re-run.</p>
+<hr />
+</div>
+</div>
+<div id="practical-notes" class="section level2">
+<h2>8. Practical notes</h2>
+<p><strong>Where to store cache files</strong></p>
+<p>Use a project-specific directory, for example <code>cache/</code> in your project root, or a configurable location via <code>options(cacheR.dir = ...)</code>.</p>
+<p><strong>Choosing what to cache</strong></p>
+<p>Good candidates are:</p>
+<ul>
+<li><p>Disk I/O heavy operations (reading many files)</p></li>
+<li><p>Large object construction (<code>DESeqDataSet</code>, <code>SummarizedExperiment</code>, etc.)</p></li>
+<li><p>Expensive model fitting steps -</p></li>
+</ul>
+<p><strong>What not to cache</strong></p>
+<p>Very fast operations (simple filtering, small transforms) rarely benefit from caching and can add overhead.</p>
+<hr />
+</div>
+<div id="session-info" class="section level2">
+<h2>Session Info</h2>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true"></a><span class="kw">sessionInfo</span>()</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true"></a><span class="co">#&gt; R version 4.3.2 (2023-10-31)</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true"></a><span class="co">#&gt; Platform: x86_64-pc-linux-gnu (64-bit)</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true"></a><span class="co">#&gt; Running under: Ubuntu 22.04.4 LTS</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true"></a><span class="co">#&gt; Matrix products: default</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true"></a><span class="co">#&gt; BLAS:   /usr/lib/x86_64-linux-gnu/openblas-pthread/libblas.so.3 </span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true"></a><span class="co">#&gt; LAPACK: /usr/lib/x86_64-linux-gnu/openblas-pthread/libopenblasp-r0.3.20.so;  LAPACK version 3.10.0</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true"></a><span class="co">#&gt; locale:</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true"></a><span class="co">#&gt;  [1] LC_CTYPE=C.UTF-8       LC_NUMERIC=C           LC_TIME=C.UTF-8       </span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true"></a><span class="co">#&gt;  [4] LC_COLLATE=C.UTF-8     LC_MONETARY=C.UTF-8    LC_MESSAGES=C.UTF-8   </span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true"></a><span class="co">#&gt;  [7] LC_PAPER=C.UTF-8       LC_NAME=C              LC_ADDRESS=C          </span></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true"></a><span class="co">#&gt; [10] LC_TELEPHONE=C         LC_MEASUREMENT=C.UTF-8 LC_IDENTIFICATION=C   </span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true"></a><span class="co">#&gt; time zone: Europe/Berlin</span></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true"></a><span class="co">#&gt; tzcode source: system (glibc)</span></span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true"></a><span class="co">#&gt; attached base packages:</span></span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true"></a><span class="co">#&gt; [1] stats4    stats     graphics  grDevices datasets  utils     methods  </span></span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true"></a><span class="co">#&gt; [8] base     </span></span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true"></a><span class="co">#&gt; other attached packages:</span></span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true"></a><span class="co">#&gt;  [1] readr_2.1.4                 dplyr_1.1.4                </span></span>
+<span id="cb14-25"><a href="#cb14-25" aria-hidden="true"></a><span class="co">#&gt;  [3] DESeq2_1.40.2               SummarizedExperiment_1.30.2</span></span>
+<span id="cb14-26"><a href="#cb14-26" aria-hidden="true"></a><span class="co">#&gt;  [5] Biobase_2.60.0              MatrixGenerics_1.14.0      </span></span>
+<span id="cb14-27"><a href="#cb14-27" aria-hidden="true"></a><span class="co">#&gt;  [7] matrixStats_1.0.0           GenomicRanges_1.52.0       </span></span>
+<span id="cb14-28"><a href="#cb14-28" aria-hidden="true"></a><span class="co">#&gt;  [9] GenomeInfoDb_1.36.2         IRanges_2.36.0             </span></span>
+<span id="cb14-29"><a href="#cb14-29" aria-hidden="true"></a><span class="co">#&gt; [11] S4Vectors_0.40.2            BiocGenerics_0.48.1        </span></span>
+<span id="cb14-30"><a href="#cb14-30" aria-hidden="true"></a><span class="co">#&gt; [13] cacheR_0.1.0                ggplot2_3.5.2              </span></span>
+<span id="cb14-31"><a href="#cb14-31" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb14-32"><a href="#cb14-32" aria-hidden="true"></a><span class="co">#&gt; loaded via a namespace (and not attached):</span></span>
+<span id="cb14-33"><a href="#cb14-33" aria-hidden="true"></a><span class="co">#&gt;  [1] gtable_0.3.6            xfun_0.40               bslib_0.5.1            </span></span>
+<span id="cb14-34"><a href="#cb14-34" aria-hidden="true"></a><span class="co">#&gt;  [4] RApiSerialize_0.1.4     lattice_0.22-7          tzdb_0.4.0             </span></span>
+<span id="cb14-35"><a href="#cb14-35" aria-hidden="true"></a><span class="co">#&gt;  [7] vctrs_0.6.5             tools_4.3.2             bitops_1.0-9           </span></span>
+<span id="cb14-36"><a href="#cb14-36" aria-hidden="true"></a><span class="co">#&gt; [10] generics_0.1.4          parallel_4.3.2          tibble_3.3.0           </span></span>
+<span id="cb14-37"><a href="#cb14-37" aria-hidden="true"></a><span class="co">#&gt; [13] pkgconfig_2.0.3         Matrix_1.6-1            RColorBrewer_1.1-3     </span></span>
+<span id="cb14-38"><a href="#cb14-38" aria-hidden="true"></a><span class="co">#&gt; [16] RcppParallel_5.1.11-1   lifecycle_1.0.4         GenomeInfoDbData_1.2.11</span></span>
+<span id="cb14-39"><a href="#cb14-39" aria-hidden="true"></a><span class="co">#&gt; [19] compiler_4.3.2          farver_2.1.2            qs_0.27.3              </span></span>
+<span id="cb14-40"><a href="#cb14-40" aria-hidden="true"></a><span class="co">#&gt; [22] codetools_0.2-20        htmltools_0.5.6         sass_0.4.7             </span></span>
+<span id="cb14-41"><a href="#cb14-41" aria-hidden="true"></a><span class="co">#&gt; [25] RCurl_1.98-1.17         yaml_2.3.10             pillar_1.11.0          </span></span>
+<span id="cb14-42"><a href="#cb14-42" aria-hidden="true"></a><span class="co">#&gt; [28] crayon_1.5.3            jquerylib_0.1.4         BiocParallel_1.36.0    </span></span>
+<span id="cb14-43"><a href="#cb14-43" aria-hidden="true"></a><span class="co">#&gt; [31] cachem_1.0.8            DelayedArray_0.28.0     abind_1.4-5            </span></span>
+<span id="cb14-44"><a href="#cb14-44" aria-hidden="true"></a><span class="co">#&gt; [34] tidyselect_1.2.1        locfit_1.5-9.8          digest_0.6.37          </span></span>
+<span id="cb14-45"><a href="#cb14-45" aria-hidden="true"></a><span class="co">#&gt; [37] fastmap_1.1.1           grid_4.3.2              cli_3.6.5              </span></span>
+<span id="cb14-46"><a href="#cb14-46" aria-hidden="true"></a><span class="co">#&gt; [40] SparseArray_1.2.0       magrittr_2.0.3          S4Arrays_1.2.0         </span></span>
+<span id="cb14-47"><a href="#cb14-47" aria-hidden="true"></a><span class="co">#&gt; [43] withr_3.0.2             scales_1.4.0            bit64_4.0.5            </span></span>
+<span id="cb14-48"><a href="#cb14-48" aria-hidden="true"></a><span class="co">#&gt; [46] rmarkdown_2.30          XVector_0.40.0          bit_4.0.5              </span></span>
+<span id="cb14-49"><a href="#cb14-49" aria-hidden="true"></a><span class="co">#&gt; [49] hms_1.1.3               stringfish_0.17.0       evaluate_1.0.5         </span></span>
+<span id="cb14-50"><a href="#cb14-50" aria-hidden="true"></a><span class="co">#&gt; [52] knitr_1.43              rlang_1.1.6             Rcpp_1.1.0             </span></span>
+<span id="cb14-51"><a href="#cb14-51" aria-hidden="true"></a><span class="co">#&gt; [55] glue_1.8.0              BiocManager_1.30.22     renv_1.0.11            </span></span>
+<span id="cb14-52"><a href="#cb14-52" aria-hidden="true"></a><span class="co">#&gt; [58] vroom_1.6.3             rstudioapi_0.15.0       jsonlite_2.0.0         </span></span>
+<span id="cb14-53"><a href="#cb14-53" aria-hidden="true"></a><span class="co">#&gt; [61] R6_2.6.1                zlibbioc_1.48.2</span></span></code></pre></div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

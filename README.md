@@ -22,7 +22,7 @@ It's like snakemake/nextflow, but on the fly
 
 ---
 
-## 🚀 Installation
+### 🚀 Installation
 
 ```r
 # install from GitHub
@@ -31,12 +31,15 @@ remotes::install_github("BIMSBbioinfo/cacheR")
 ```
 
 ### Basic usage 
+<<<<<<< HEAD
 
 The package introduces:
 
 - `cacheFile()` — a caching decorator  
 - `%@%` — an operator for applying decorators  
 - `cacheTree_*()` — functions for inspecting the cache tree 
+=======
+>>>>>>> 3534063 (readme)
 
 ```
 library(cacheR)
@@ -53,3 +56,9 @@ outer(3)
 #> 8
 
 ```
+
+
+### Limitations
+
+cacheR stops tracking when it hits a function imported from a package. Then it records the package version. It also doesn't track C dependencies.
+

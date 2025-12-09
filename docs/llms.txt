@@ -1,0 +1,82 @@
+# cacheR ![](https://img.shields.io/badge/status-experimental-orange)
+
+`cacheR` provides **recursive, file-based function caching** for R, with
+the unique ability to record **parent–child relationships** between
+cached calls.
+
+This is useful for:
+
+- Building provenance graphs  
+- Debugging nested function calls  
+- Understanding how a function tree produces a result  
+- Reusing heavy computations safely and transparently
+
+The package introduces:
+
+- [`cacheFile()`](https://BIMSBbioinfo.github.io/cacheR/reference/cacheFile.md)
+  — a caching decorator  
+- `%@%` — an operator for applying decorators  
+- `cacheTree_*()` — functions for inspecting the cache tree
+
+------------------------------------------------------------------------
+
+## 🚀 Installation
+
+``` r
+
+# install from GitHub
+# requires: remotes::install_github()
+remotes::install_github("BIMSBbioinfo/cacheR")
+```
+
+Basic usage
+
+    library(cacheR)
+
+    cache_dir <- file.path(tempdir(), "cache_test")
+    dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+    # Define cached functions
+    inner <- cacheFile(cache_dir) %@% function(x) x + 1
+    outer <- cacheFile(cache_dir) %@% function(x) inner(x) * 2
+
+    # Execute
+    outer(3)
+    #> 8
+
+# Package index
+
+## All functions
+
+- [`cacheFile()`](https://BIMSBbioinfo.github.io/cacheR/reference/cacheFile.md)
+  : Create a disk-backed caching decorator for a function
+- [`cacheTree_nodes()`](https://BIMSBbioinfo.github.io/cacheR/reference/cacheTree_nodes.md)
+  : Return cache tree nodes
+- [`cacheTree_reset()`](https://BIMSBbioinfo.github.io/cacheR/reference/cacheTree_reset.md)
+  : Reset the cache tree state
+- [`decorator()`](https://BIMSBbioinfo.github.io/cacheR/reference/decorator.md)
+  : Turn a function into a decorator.
+- [`.delayed_decorate()`](https://BIMSBbioinfo.github.io/cacheR/reference/dot-delayed_decorate.md)
+  : Combine two decorators lazily into a new decorator.
+- [`` `%@%`( ``*`<decorator>`*`)`](https://BIMSBbioinfo.github.io/cacheR/reference/grapes-at-grapes-.decorator.md)
+  : Core method: apply a decorator to a function. Supports chaining: d1
+  %@% d2 %@% function(...) ...
+- [`` `%@%`( ``*`<default>`*`)`](https://BIMSBbioinfo.github.io/cacheR/reference/grapes-at-grapes-.default.md)
+  : Fallback: object is not a decorator.
+- [`` `%@%` ``](https://BIMSBbioinfo.github.io/cacheR/reference/grapes-at-grapes.md)
+  : Decorator application operator
+- [`prettify()`](https://BIMSBbioinfo.github.io/cacheR/reference/prettify.md)
+  : Attach pretty metadata to a decorated function.
+- [`pretty_code()`](https://BIMSBbioinfo.github.io/cacheR/reference/pretty_code.md)
+  : Get a "pretty" code representation for a function.
+- [`print(`*`<decorated>`*`)`](https://BIMSBbioinfo.github.io/cacheR/reference/print.decorated.md)
+  : Pretty-print decorated functions.
+
+# Articles
+
+### All vignettes
+
+- [Introduction to
+  cacheR](https://BIMSBbioinfo.github.io/cacheR/articles/cacheR-introduction.md):
+- [Reproducible and Fast RNA-seq Analysis with
+  cacheR](https://BIMSBbioinfo.github.io/cacheR/articles/cacheR-rnaseq.md):
