@@ -1,2 +1,8 @@
 ^cacheR\.Rproj$
 ^\.Rproj\.user$
+^\./cacheR$
+^docs$
+^pkgdown$
+^_pkgdown\.yml$
+^doc$
+^Meta$
