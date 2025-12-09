@@ -21,7 +21,10 @@ Imports:
     digest,
     tools,
     codetools,
-    qs
+    qs,
+    mockery,
+    compiler,
+    filelock
 Suggests:
     testthat (>= 3.0.0),
     knitr,

@@ -83,34 +83,6 @@ cacheTree_for_file <- function(path) {
   nodes[keep]
 }
 
-cacheTree_changed_files <- function() {
-  nodes <- cacheTree_nodes()
-  out <- list()
-  for (id in names(nodes)) {
-    n  <- nodes[[id]]
-    fh <- n$file_hashes
-    if (!length(fh)) next
-    changed <- logical(length(fh))
-    for (i in seq_along(fh)) {
-      p        <- names(fh)[i]
-      old_hash <- fh[[i]]
-      if (!file.exists(p)) {
-        changed[i] <- TRUE
-      } else {
-        new_hash <- digest::digest(file = p, algo = "md5")
-        changed[i] <- !identical(old_hash, new_hash)
-      }
-    }
-    if (any(changed)) {
-      out[[id]] <- list(
-        node          = n,
-        changed_files = names(fh)[changed]
-      )
-    }
-  }
-  out
-}
-
 # ------------------------------------------------------------ #
 #' Reset the cache tree state
 #'
@@ -158,12 +130,7 @@ cacheTree_load <- function(path) {
 .file_state_cache <- new.env(parent = emptyenv())
 
 # ------------------------------------------------------------ #
-probabilistic_file_hash <- function(
-    path,
-    block_size = 64 * 1024,
-    n_blocks   = 5,
-    algo       = "xxhash64"
-) {
+probabilistic_file_hash <- function(path, block_size = 64 * 1024, n_blocks = 5, algo = "xxhash64") {
   if (!file.exists(path)) return(NA_character_)
 
   size <- file.info(path)$size
@@ -171,13 +138,19 @@ probabilistic_file_hash <- function(
   on.exit(close(con), add = TRUE)
 
   blocks <- list()
+  # First block (Header is usually important)
+  blocks[[1]] <- readBin(con, "raw", block_size)
 
-  # First block
-  blocks[[length(blocks) + 1L]] <- readBin(con, "raw", block_size)
-
-  # Random blocks
   if (size > block_size) {
     max_offset <- max(size - block_size, 1)
+    
+    # --- CRITICAL FIX START ---
+    # Ensure deterministic sampling based on file size + path
+    # We scramble the size/path to get a seed
+    seed_val <- as.integer(charToRaw(paste0(path, size))) 
+    set.seed(sum(seed_val)) 
+    # --- CRITICAL FIX END ---
+    
     for (i in seq_len(n_blocks)) {
       offset <- sample.int(max_offset, 1)
       seek(con, offset, "start")
@@ -185,7 +158,7 @@ probabilistic_file_hash <- function(
     }
   }
 
-  # Last block
+  # Last block (Footer is usually important)
   if (size > block_size) {
     seek(con, max(size - block_size, 0), "start")
     blocks[[length(blocks) + 1L]] <- readBin(con, "raw", block_size)
