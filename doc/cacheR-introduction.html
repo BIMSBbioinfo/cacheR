@@ -392,7 +392,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true"></a>cache_dir &lt;-<span class="st"> </span><span class="kw">file.path</span>(<span class="kw">tempdir</span>(), <span class="st">&quot;cacheR-demo&quot;</span>)</span>
 <span id="cb2-2"><a href="#cb2-2" aria-hidden="true"></a><span class="kw">dir.create</span>(cache_dir, <span class="dt">showWarnings =</span> <span class="ot">FALSE</span>, <span class="dt">recursive =</span> <span class="ot">TRUE</span>)</span>
 <span id="cb2-3"><a href="#cb2-3" aria-hidden="true"></a>cache_dir</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;/local/vfranke/Tmp/Rtmp7kjD83/cacheR-demo&quot;</span></span></code></pre></div>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;/local/vfranke/Tmp/Rtmpq9of1f/cacheR-demo&quot;</span></span></code></pre></div>
 <hr />
 </div>
 <div id="caching-basic-summary-statistics" class="section level1">
@@ -426,25 +426,26 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <span id="cb5-5"><a href="#cb5-5" aria-hidden="true"></a><span class="kw">system.time</span>(res1 &lt;-<span class="st"> </span><span class="kw">cached_stat_summary</span>(x))</span>
 <span id="cb5-6"><a href="#cb5-6" aria-hidden="true"></a><span class="co">#&gt; Computing stats ...</span></span>
 <span id="cb5-7"><a href="#cb5-7" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
-<span id="cb5-8"><a href="#cb5-8" aria-hidden="true"></a><span class="co">#&gt;   0.009   0.000   1.009</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true"></a><span class="co">#&gt;   0.038   0.000   1.038</span></span>
 <span id="cb5-9"><a href="#cb5-9" aria-hidden="true"></a><span class="kw">system.time</span>(res2 &lt;-<span class="st"> </span><span class="kw">cached_stat_summary</span>(x))</span>
-<span id="cb5-10"><a href="#cb5-10" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
-<span id="cb5-11"><a href="#cb5-11" aria-hidden="true"></a><span class="co">#&gt;   0.001   0.000   0.001</span></span>
-<span id="cb5-12"><a href="#cb5-12" aria-hidden="true"></a></span>
-<span id="cb5-13"><a href="#cb5-13" aria-hidden="true"></a>res1</span>
-<span id="cb5-14"><a href="#cb5-14" aria-hidden="true"></a><span class="co">#&gt; $mean</span></span>
-<span id="cb5-15"><a href="#cb5-15" aria-hidden="true"></a><span class="co">#&gt; [1] -0.002244083</span></span>
-<span id="cb5-16"><a href="#cb5-16" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb5-17"><a href="#cb5-17" aria-hidden="true"></a><span class="co">#&gt; $variance</span></span>
-<span id="cb5-18"><a href="#cb5-18" aria-hidden="true"></a><span class="co">#&gt; [1] 1.007059</span></span>
-<span id="cb5-19"><a href="#cb5-19" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb5-20"><a href="#cb5-20" aria-hidden="true"></a><span class="co">#&gt; $sd</span></span>
-<span id="cb5-21"><a href="#cb5-21" aria-hidden="true"></a><span class="co">#&gt; [1] 1.003523</span></span>
-<span id="cb5-22"><a href="#cb5-22" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb5-23"><a href="#cb5-23" aria-hidden="true"></a><span class="co">#&gt; $median</span></span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true"></a><span class="co">#&gt; [1] 0.0008011329</span></span>
-<span id="cb5-25"><a href="#cb5-25" aria-hidden="true"></a><span class="kw">identical</span>(res1, res2)</span>
-<span id="cb5-26"><a href="#cb5-26" aria-hidden="true"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true"></a><span class="co">#&gt; Computing stats ...</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true"></a><span class="co">#&gt;   0.022   0.000   1.022</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true"></a></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true"></a>res1</span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true"></a><span class="co">#&gt; $mean</span></span>
+<span id="cb5-16"><a href="#cb5-16" aria-hidden="true"></a><span class="co">#&gt; [1] -0.002244083</span></span>
+<span id="cb5-17"><a href="#cb5-17" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb5-18"><a href="#cb5-18" aria-hidden="true"></a><span class="co">#&gt; $variance</span></span>
+<span id="cb5-19"><a href="#cb5-19" aria-hidden="true"></a><span class="co">#&gt; [1] 1.007059</span></span>
+<span id="cb5-20"><a href="#cb5-20" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb5-21"><a href="#cb5-21" aria-hidden="true"></a><span class="co">#&gt; $sd</span></span>
+<span id="cb5-22"><a href="#cb5-22" aria-hidden="true"></a><span class="co">#&gt; [1] 1.003523</span></span>
+<span id="cb5-23"><a href="#cb5-23" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true"></a><span class="co">#&gt; $median</span></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true"></a><span class="co">#&gt; [1] 0.0008011329</span></span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true"></a><span class="kw">identical</span>(res1, res2)</span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <ul>
 <li>First call: prints <code>&quot;Computing stats ...&quot;</code> and takes ~1 second.</li>
 <li>Second call with the <em>same</em> input: should be almost instant, reusing the cached result.</li>
@@ -496,15 +497,16 @@ Let’s define a function that:</p>
 <span id="cb8-5"><a href="#cb8-5" aria-hidden="true"></a><span class="kw">system.time</span>(res1 &lt;-<span class="st"> </span><span class="kw">cached_cor_with_moments</span>(mat))</span>
 <span id="cb8-6"><a href="#cb8-6" aria-hidden="true"></a><span class="co">#&gt; Computing correlations and moments ...</span></span>
 <span id="cb8-7"><a href="#cb8-7" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
-<span id="cb8-8"><a href="#cb8-8" aria-hidden="true"></a><span class="co">#&gt;   0.003   0.000   1.004</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true"></a><span class="co">#&gt;   0.017   0.000   1.018</span></span>
 <span id="cb8-9"><a href="#cb8-9" aria-hidden="true"></a><span class="kw">system.time</span>(res2 &lt;-<span class="st"> </span><span class="kw">cached_cor_with_moments</span>(mat))</span>
-<span id="cb8-10"><a href="#cb8-10" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
-<span id="cb8-11"><a href="#cb8-11" aria-hidden="true"></a><span class="co">#&gt;   0.001   0.000   0.000</span></span>
-<span id="cb8-12"><a href="#cb8-12" aria-hidden="true"></a></span>
-<span id="cb8-13"><a href="#cb8-13" aria-hidden="true"></a><span class="kw">str</span>(res1<span class="op">$</span>cor)</span>
-<span id="cb8-14"><a href="#cb8-14" aria-hidden="true"></a><span class="co">#&gt;  num [1:10, 1:10] 1 -0.0277 -0.0302 -0.0464 -0.0513 ...</span></span>
-<span id="cb8-15"><a href="#cb8-15" aria-hidden="true"></a><span class="kw">identical</span>(res1<span class="op">$</span>cor, res2<span class="op">$</span>cor)</span>
-<span id="cb8-16"><a href="#cb8-16" aria-hidden="true"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true"></a><span class="co">#&gt; Computing correlations and moments ...</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true"></a><span class="co">#&gt;   0.025   0.000   1.026</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true"></a></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true"></a><span class="kw">str</span>(res1<span class="op">$</span>cor)</span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true"></a><span class="co">#&gt;  num [1:10, 1:10] 1 -0.0277 -0.0302 -0.0464 -0.0513 ...</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true"></a><span class="kw">identical</span>(res1<span class="op">$</span>cor, res2<span class="op">$</span>cor)</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p>Again:</p>
 <ul>
 <li>First call: actually computes mean, variance and correlation.</li>
@@ -553,13 +555,15 @@ Let’s define a function that:</p>
 <span id="cb11-5"><a href="#cb11-5" aria-hidden="true"></a><span class="co">#&gt; Analyzing scaled data ...</span></span>
 <span id="cb11-6"><a href="#cb11-6" aria-hidden="true"></a><span class="co">#&gt; Preprocessing matrix (center &amp; scale) ...</span></span>
 <span id="cb11-7"><a href="#cb11-7" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true"></a><span class="co">#&gt;   0.004   0.000   1.005</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true"></a><span class="co">#&gt;   0.098   0.004   1.103</span></span>
 <span id="cb11-9"><a href="#cb11-9" aria-hidden="true"></a><span class="kw">system.time</span>(a2 &lt;-<span class="st"> </span><span class="kw">analyze_scaled</span>(mat2))</span>
-<span id="cb11-10"><a href="#cb11-10" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
-<span id="cb11-11"><a href="#cb11-11" aria-hidden="true"></a><span class="co">#&gt;   0.001   0.000   0.001</span></span>
-<span id="cb11-12"><a href="#cb11-12" aria-hidden="true"></a></span>
-<span id="cb11-13"><a href="#cb11-13" aria-hidden="true"></a><span class="kw">identical</span>(a1<span class="op">$</span>cor, a2<span class="op">$</span>cor)</span>
-<span id="cb11-14"><a href="#cb11-14" aria-hidden="true"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true"></a><span class="co">#&gt; Analyzing scaled data ...</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true"></a><span class="co">#&gt; Preprocessing matrix (center &amp; scale) ...</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true"></a><span class="co">#&gt;   0.091   0.011   1.103</span></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true"></a></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true"></a><span class="kw">identical</span>(a1<span class="op">$</span>cor, a2<span class="op">$</span>cor)</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p>What happens:</p>
 <ol style="list-style-type: decimal">
 <li><strong>First run</strong>
@@ -575,35 +579,66 @@ Let’s define a function that:</p>
 <p>If your version of <code>cacheR</code> supports a <strong>cache tree</strong>, you can inspect the relationships between cached calls:</p>
 <div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true"></a><span class="kw">cacheTree_reset</span>()</span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true"></a>a &lt;-<span class="st"> </span><span class="kw">analyze_scaled</span>(mat2)</span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true"></a>nodes &lt;-<span class="st"> </span><span class="kw">cacheTree_nodes</span>()</span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true"></a>nodes</span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:3b6bf40402c46074`</span></span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:3b6bf40402c46074`$id</span></span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;analyze_scaled:3b6bf40402c46074&quot;</span></span>
-<span id="cb12-8"><a href="#cb12-8" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb12-9"><a href="#cb12-9" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:3b6bf40402c46074`$fname</span></span>
-<span id="cb12-10"><a href="#cb12-10" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;analyze_scaled&quot;</span></span>
-<span id="cb12-11"><a href="#cb12-11" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb12-12"><a href="#cb12-12" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:3b6bf40402c46074`$hash</span></span>
-<span id="cb12-13"><a href="#cb12-13" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;3b6bf40402c46074&quot;</span></span>
-<span id="cb12-14"><a href="#cb12-14" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb12-15"><a href="#cb12-15" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:3b6bf40402c46074`$outfile</span></span>
-<span id="cb12-16"><a href="#cb12-16" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;/local/vfranke/Tmp/Rtmp7kjD83/cacheR-demo/analyze_scaled.3b6bf40402c46074.qs&quot;</span></span>
-<span id="cb12-17"><a href="#cb12-17" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb12-18"><a href="#cb12-18" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:3b6bf40402c46074`$parents</span></span>
-<span id="cb12-19"><a href="#cb12-19" aria-hidden="true"></a><span class="co">#&gt; character(0)</span></span>
-<span id="cb12-20"><a href="#cb12-20" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb12-21"><a href="#cb12-21" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:3b6bf40402c46074`$children</span></span>
-<span id="cb12-22"><a href="#cb12-22" aria-hidden="true"></a><span class="co">#&gt; character(0)</span></span>
-<span id="cb12-23"><a href="#cb12-23" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb12-24"><a href="#cb12-24" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:3b6bf40402c46074`$files</span></span>
-<span id="cb12-25"><a href="#cb12-25" aria-hidden="true"></a><span class="co">#&gt; character(0)</span></span>
-<span id="cb12-26"><a href="#cb12-26" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb12-27"><a href="#cb12-27" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:3b6bf40402c46074`$file_hashes</span></span>
-<span id="cb12-28"><a href="#cb12-28" aria-hidden="true"></a><span class="co">#&gt; character(0)</span></span>
-<span id="cb12-29"><a href="#cb12-29" aria-hidden="true"></a><span class="co">#&gt; </span></span>
-<span id="cb12-30"><a href="#cb12-30" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:3b6bf40402c46074`$created</span></span>
-<span id="cb12-31"><a href="#cb12-31" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;2025-12-02 15:43:19 CET&quot;</span></span></code></pre></div>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true"></a><span class="co">#&gt; Analyzing scaled data ...</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true"></a><span class="co">#&gt; Preprocessing matrix (center &amp; scale) ...</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true"></a>nodes &lt;-<span class="st"> </span><span class="kw">cacheTree_nodes</span>()</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true"></a>nodes</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:6ceed27fac265777`</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:6ceed27fac265777`$id</span></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;analyze_scaled:6ceed27fac265777&quot;</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:6ceed27fac265777`$fname</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;analyze_scaled&quot;</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:6ceed27fac265777`$hash</span></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;6ceed27fac265777&quot;</span></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:6ceed27fac265777`$outfile</span></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;/local/vfranke/Tmp/Rtmpq9of1f/cacheR-demo/analyze_scaled.6ceed27fac265777.qs&quot;</span></span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:6ceed27fac265777`$parents</span></span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true"></a><span class="co">#&gt; character(0)</span></span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:6ceed27fac265777`$children</span></span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;cached_preprocess_matrix:7cb592a080a4e3d9&quot;</span></span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:6ceed27fac265777`$files</span></span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true"></a><span class="co">#&gt; character(0)</span></span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:6ceed27fac265777`$file_hashes</span></span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true"></a><span class="co">#&gt; character(0)</span></span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true"></a><span class="co">#&gt; $`analyze_scaled:6ceed27fac265777`$created</span></span>
+<span id="cb12-33"><a href="#cb12-33" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;2025-12-15 14:35:09 CET&quot;</span></span>
+<span id="cb12-34"><a href="#cb12-34" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-35"><a href="#cb12-35" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-36"><a href="#cb12-36" aria-hidden="true"></a><span class="co">#&gt; $`cached_preprocess_matrix:7cb592a080a4e3d9`</span></span>
+<span id="cb12-37"><a href="#cb12-37" aria-hidden="true"></a><span class="co">#&gt; $`cached_preprocess_matrix:7cb592a080a4e3d9`$id</span></span>
+<span id="cb12-38"><a href="#cb12-38" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;cached_preprocess_matrix:7cb592a080a4e3d9&quot;</span></span>
+<span id="cb12-39"><a href="#cb12-39" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-40"><a href="#cb12-40" aria-hidden="true"></a><span class="co">#&gt; $`cached_preprocess_matrix:7cb592a080a4e3d9`$fname</span></span>
+<span id="cb12-41"><a href="#cb12-41" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;cached_preprocess_matrix&quot;</span></span>
+<span id="cb12-42"><a href="#cb12-42" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-43"><a href="#cb12-43" aria-hidden="true"></a><span class="co">#&gt; $`cached_preprocess_matrix:7cb592a080a4e3d9`$hash</span></span>
+<span id="cb12-44"><a href="#cb12-44" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;7cb592a080a4e3d9&quot;</span></span>
+<span id="cb12-45"><a href="#cb12-45" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-46"><a href="#cb12-46" aria-hidden="true"></a><span class="co">#&gt; $`cached_preprocess_matrix:7cb592a080a4e3d9`$outfile</span></span>
+<span id="cb12-47"><a href="#cb12-47" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;/local/vfranke/Tmp/Rtmpq9of1f/cacheR-demo/cached_preprocess_matrix.7cb592a080a4e3d9.qs&quot;</span></span>
+<span id="cb12-48"><a href="#cb12-48" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-49"><a href="#cb12-49" aria-hidden="true"></a><span class="co">#&gt; $`cached_preprocess_matrix:7cb592a080a4e3d9`$parents</span></span>
+<span id="cb12-50"><a href="#cb12-50" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;analyze_scaled:6ceed27fac265777&quot;</span></span>
+<span id="cb12-51"><a href="#cb12-51" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-52"><a href="#cb12-52" aria-hidden="true"></a><span class="co">#&gt; $`cached_preprocess_matrix:7cb592a080a4e3d9`$children</span></span>
+<span id="cb12-53"><a href="#cb12-53" aria-hidden="true"></a><span class="co">#&gt; character(0)</span></span>
+<span id="cb12-54"><a href="#cb12-54" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-55"><a href="#cb12-55" aria-hidden="true"></a><span class="co">#&gt; $`cached_preprocess_matrix:7cb592a080a4e3d9`$files</span></span>
+<span id="cb12-56"><a href="#cb12-56" aria-hidden="true"></a><span class="co">#&gt; character(0)</span></span>
+<span id="cb12-57"><a href="#cb12-57" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-58"><a href="#cb12-58" aria-hidden="true"></a><span class="co">#&gt; $`cached_preprocess_matrix:7cb592a080a4e3d9`$file_hashes</span></span>
+<span id="cb12-59"><a href="#cb12-59" aria-hidden="true"></a><span class="co">#&gt; character(0)</span></span>
+<span id="cb12-60"><a href="#cb12-60" aria-hidden="true"></a><span class="co">#&gt; </span></span>
+<span id="cb12-61"><a href="#cb12-61" aria-hidden="true"></a><span class="co">#&gt; $`cached_preprocess_matrix:7cb592a080a4e3d9`$created</span></span>
+<span id="cb12-62"><a href="#cb12-62" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;2025-12-15 14:35:09 CET&quot;</span></span></code></pre></div>
 <p>You should see at least two nodes:</p>
 <ul>
 <li>one for <code>analyze_scaled(mat2)</code></li>
@@ -630,19 +665,29 @@ Let’s define a function that:</p>
 <span id="cb15-4"><a href="#cb15-4" aria-hidden="true"></a><span class="kw">system.time</span>(r1 &lt;-<span class="st"> </span><span class="kw">cached_cor_qs</span>(mat_big))</span>
 <span id="cb15-5"><a href="#cb15-5" aria-hidden="true"></a><span class="co">#&gt; Computing correlations and moments ...</span></span>
 <span id="cb15-6"><a href="#cb15-6" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
-<span id="cb15-7"><a href="#cb15-7" aria-hidden="true"></a><span class="co">#&gt;   0.016   0.000   1.017</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true"></a><span class="co">#&gt;   0.023   0.000   1.023</span></span>
 <span id="cb15-8"><a href="#cb15-8" aria-hidden="true"></a><span class="kw">system.time</span>(r2 &lt;-<span class="st"> </span><span class="kw">cached_cor_qs</span>(mat_big))</span>
-<span id="cb15-9"><a href="#cb15-9" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
-<span id="cb15-10"><a href="#cb15-10" aria-hidden="true"></a><span class="co">#&gt;   0.000   0.000   0.001</span></span>
-<span id="cb15-11"><a href="#cb15-11" aria-hidden="true"></a></span>
-<span id="cb15-12"><a href="#cb15-12" aria-hidden="true"></a><span class="kw">identical</span>(r1<span class="op">$</span>cor, r2<span class="op">$</span>cor)</span>
-<span id="cb15-13"><a href="#cb15-13" aria-hidden="true"></a><span class="co">#&gt; [1] TRUE</span></span>
-<span id="cb15-14"><a href="#cb15-14" aria-hidden="true"></a><span class="kw">list.files</span>(cache_dir, <span class="dt">recursive =</span> <span class="ot">TRUE</span>)</span>
-<span id="cb15-15"><a href="#cb15-15" aria-hidden="true"></a><span class="co">#&gt; [1] &quot;analyze_scaled.3b6bf40402c46074.qs&quot;          </span></span>
-<span id="cb15-16"><a href="#cb15-16" aria-hidden="true"></a><span class="co">#&gt; [2] &quot;cached_cor_qs.8af0c07592d8b08d.qs&quot;           </span></span>
-<span id="cb15-17"><a href="#cb15-17" aria-hidden="true"></a><span class="co">#&gt; [3] &quot;cached_cor_with_moments.0b04858d0f5ba436.rds&quot;</span></span>
-<span id="cb15-18"><a href="#cb15-18" aria-hidden="true"></a><span class="co">#&gt; [4] &quot;cached_preprocess_matrix.87ff32e7c6770a70.qs&quot;</span></span>
-<span id="cb15-19"><a href="#cb15-19" aria-hidden="true"></a><span class="co">#&gt; [5] &quot;cached_stat_summary.31a3d441a8421857.rds&quot;</span></span></code></pre></div>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true"></a><span class="co">#&gt; Computing correlations and moments ...</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true"></a><span class="co">#&gt;    user  system elapsed </span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true"></a><span class="co">#&gt;   0.023   0.004   1.028</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true"></a></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true"></a><span class="kw">identical</span>(r1<span class="op">$</span>cor, r2<span class="op">$</span>cor)</span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true"></a><span class="co">#&gt; [1] TRUE</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true"></a><span class="kw">list.files</span>(cache_dir, <span class="dt">recursive =</span> <span class="ot">TRUE</span>)</span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true"></a><span class="co">#&gt;  [1] &quot;analyze_scaled.6ceed27fac265777.qs&quot;               </span></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true"></a><span class="co">#&gt;  [2] &quot;analyze_scaled.6ceed27fac265777.qs.lock&quot;          </span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true"></a><span class="co">#&gt;  [3] &quot;analyze_scaled.6f4a602bf512f2af.qs&quot;               </span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true"></a><span class="co">#&gt;  [4] &quot;analyze_scaled.6f4a602bf512f2af.qs.lock&quot;          </span></span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true"></a><span class="co">#&gt;  [5] &quot;analyze_scaled.da43a530da9fdd35.qs&quot;               </span></span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true"></a><span class="co">#&gt;  [6] &quot;analyze_scaled.da43a530da9fdd35.qs.lock&quot;          </span></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true"></a><span class="co">#&gt;  [7] &quot;cached_cor_qs.be2ae6e8d7cbfde6.qs&quot;                </span></span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true"></a><span class="co">#&gt;  [8] &quot;cached_cor_qs.be2ae6e8d7cbfde6.qs.lock&quot;           </span></span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true"></a><span class="co">#&gt;  [9] &quot;cached_cor_with_moments.c1c402a33d2d261d.rds&quot;     </span></span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true"></a><span class="co">#&gt; [10] &quot;cached_cor_with_moments.c1c402a33d2d261d.rds.lock&quot;</span></span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true"></a><span class="co">#&gt; [11] &quot;cached_preprocess_matrix.7cb592a080a4e3d9.qs&quot;     </span></span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true"></a><span class="co">#&gt; [12] &quot;cached_preprocess_matrix.7cb592a080a4e3d9.qs.lock&quot;</span></span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true"></a><span class="co">#&gt; [13] &quot;cached_stat_summary.c7b201d2f3a96f11.rds&quot;         </span></span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true"></a><span class="co">#&gt; [14] &quot;cached_stat_summary.c7b201d2f3a96f11.rds.lock&quot;</span></span></code></pre></div>
 <p>You should see some <code>.qs</code> files in the cache directory.</p>
 <hr />
 </div>
@@ -692,7 +737,7 @@ Let’s define a function that:</p>
 <span id="cb17-18"><a href="#cb17-18" aria-hidden="true"></a>}</span></code></pre></div>
 <p>Usage:</p>
 <div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true"></a>res &lt;-<span class="st"> </span><span class="kw">cached_file_stats</span>(example_csv)</span>
-<span id="cb18-2"><a href="#cb18-2" aria-hidden="true"></a><span class="co">#&gt; Reading CSV: /local/vfranke/Tmp/Rtmp7kjD83/my_data.csv</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true"></a><span class="co">#&gt; Reading CSV: /local/vfranke/Tmp/Rtmpq9of1f/my_data.csv</span></span>
 <span id="cb18-3"><a href="#cb18-3" aria-hidden="true"></a><span class="co">#&gt; Computing correlations and moments ...</span></span>
 <span id="cb18-4"><a href="#cb18-4" aria-hidden="true"></a>res<span class="op">$</span>mean</span>
 <span id="cb18-5"><a href="#cb18-5" aria-hidden="true"></a><span class="co">#&gt;          x          y          z </span></span>

@@ -288,7 +288,9 @@ test_that("Robustness: 'Touching' a file (mtime change) does NOT invalidate cach
   on.exit(unlink(cache_dir, recursive = TRUE))
   
   f_path <- file.path(tempdir(), "touch_me.txt")
-  cat("Important Data", file = f_path)
+  
+  # FIX: Use writeLines() instead of cat() to ensure a proper newline exists.
+  writeLines("Important Data", f_path)
   on.exit(unlink(f_path), add = TRUE)
   
   # Define the processor to return a LIST containing data + generation time
@@ -326,15 +328,13 @@ test_that("Sensitivity: Changing content (even with same size) invalidates cache
   on.exit(unlink(cache_dir, recursive = TRUE))
   
   f_path <- file.path(tempdir(), "change_me.txt")
-  # Write 3 bytes
-  cat("abc", file = f_path)
+  # FIX: Add newline to avoid readLines warning
+  cat("abc\n", file = f_path) 
   on.exit(unlink(f_path), add = TRUE)
   
-  # Define processor: Returns a list containing the data AND a generation timestamp
   proc <- cacheFile(cache_dir) %@% function(x) {
     list(
       content = readLines(x),
-      # If this function runs again, this time/ID will change
       run_id = as.numeric(Sys.time()) 
     )
   }
@@ -343,20 +343,15 @@ test_that("Sensitivity: Changing content (even with same size) invalidates cache
   res1 <- proc(f_path)
   expect_equal(res1$content, "abc")
   
-  # ACTION: Change content, but keep size identical (3 bytes)
-  # 'abc' -> 'xyz'
-  Sys.sleep(1.1) # Ensure mtime updates so the caching logic sees a file change
-  cat("xyz", file = f_path)
+  # ACTION: Change content, but keep size identical (4 bytes now due to \n)
+  Sys.sleep(1.1) 
+  # FIX: Add newline here too
+  cat("xyz\n", file = f_path)
   
   # --- Run 2 ---
-  # Logic: mtime changed -> Re-hash content -> Content changed -> New Hash -> Cache MISS -> Re-run
   res2 <- proc(f_path)
   
-  # 1. Verify we got the new content
   expect_equal(res2$content, "xyz")
-  
-  # 2. Verify the function actually re-executed (Run IDs should differ)
-  # If the cache had incorrectly served the old result, res2$run_id would equal res1$run_id
   expect_false(res1$run_id == res2$run_id) 
 })
 
@@ -528,9 +523,9 @@ test_that("Robustness: Touching a file (mtime change) does NOT invalidate if con
   dir.create(cache_dir, showWarnings = FALSE)
   
   f_path <- file.path(tempdir(), "touch_me.txt")
-  cat("data", file = f_path)
+  # FIX: Use writeLines for cleaner file writing with newlines
+  writeLines("data", f_path)
   
-  # FIX: Explicitly set backend="rds"
   proc <- cacheFile(cache_dir, backend = "rds") %@% function(x) {
     readLines(x)
   }
@@ -539,7 +534,6 @@ test_that("Robustness: Touching a file (mtime change) does NOT invalidate if con
   proc(f_path)
   expect_length(list.files(cache_dir, pattern = "\\.rds$"), 1)
 
-  
   # Touch file
   Sys.sleep(1.1)
   Sys.setFileTime(f_path, Sys.time())
@@ -547,8 +541,6 @@ test_that("Robustness: Touching a file (mtime change) does NOT invalidate if con
   # Run 2 (Should Hit Cache)
   proc(f_path)
   expect_length(list.files(cache_dir, pattern = "\\.rds$"), 1)
-
-
 })
 
 # --------------------------------------------------------#
@@ -586,4 +578,42 @@ test_that("Sampling: Header changes are detected in large files (>64KB)", {
   
   files2 <- list.files(cache_dir, pattern = "\\.rds$")
   expect_length(files2, 2)
+})
+
+# ---------------------------------------------------------------- #
+# Directory Hashing (Relative Paths)
+# ---------------------------------------------------------------- #
+
+test_that("Directory hashing detects file renaming (structure changes)", {
+  cache_dir <- file.path(tempdir(), "test_dir_struct")
+  data_dir  <- file.path(tempdir(), "data_struct")
+  
+  on.exit({
+    unlink(cache_dir, recursive = TRUE)
+    unlink(data_dir, recursive = TRUE)
+  })
+  
+  dir.create(cache_dir, showWarnings=FALSE)
+  dir.create(data_dir, showWarnings=FALSE)
+  
+  # Setup: Create file A
+  writeLines("content", file.path(data_dir, "fileA.txt"))
+  
+  f <- cacheFile(cache_dir) %@% function(path) {
+    as.numeric(Sys.time())
+  }
+  
+  # Run 1
+  id1 <- f(data_dir)
+  
+  # ACTION: Rename fileA -> fileB 
+  # (Content is identical, size identical. Mtime updates, but structure definitely updates)
+  file.rename(file.path(data_dir, "fileA.txt"), file.path(data_dir, "fileB.txt"))
+  
+  Sys.sleep(1.1)
+  
+  # Run 2
+  id2 <- f(data_dir)
+  
+  expect_false(id1 == id2)
 })

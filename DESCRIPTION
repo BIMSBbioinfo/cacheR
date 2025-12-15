@@ -22,13 +22,14 @@ Imports:
     tools,
     codetools,
     qs,
-    mockery,
     compiler,
     filelock
 Suggests:
+    mockery,
     testthat (>= 3.0.0),
     knitr,
-    rmarkdown
+    rmarkdown,
+    callr
 Config/testthat/edition: 3
 LazyData: true
 VignetteBuilder: knitr

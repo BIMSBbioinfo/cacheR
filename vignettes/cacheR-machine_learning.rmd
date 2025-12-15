@@ -1,0 +1,123 @@
+---
+title: "Accelerating ML Workflows with cacheR"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Accelerating ML Workflows with cacheR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+
+In Machine Learning pipelines, re-running expensive training steps just to tweak a plot or adjust a downstream report is a major productivity killer. cacheR solves this by automatically persisting your models based on their code, data, and hyperparameters.
+
+In this example, we will simulate a training pipeline where we train multiple Random Forest models with different configurations and random seeds.
+
+## 1. Setup
+
+We will use the randomForest package. We also define a temporary directory for our cache.
+
+
+```{r}
+library(cacheR)
+library(randomForest)
+```
+
+Setup a temporary cache location (in real projects, use a persistent path)
+
+```{r}
+cache_dir <- file.path(tempdir(), "ml_cache_example")
+if(dir.exists(cache_dir)) unlink(cache_dir, recursive = TRUE)
+```
+
+
+## 2. Define the Cached Trainer
+
+We wrap our training logic with cacheFile.
+
+Key Pattern: Notice that seed is passed as an argument to the function. This ensures that:
+
+The seed is part of the cache hash (changing the seed invalidates the cache).
+
+The function body sets the seed, guaranteeing deterministic results for that specific entry.
+
+We add a generic 1-second sleep to simulate a large dataset or complex training
+
+```{r}
+train_rf <- cacheFile(cache_dir) %@% function(data, ntree, mtry, seed) {
+  message(sprintf("⚡ Training Model: ntree=%d, mtry=%d, seed=%d ...", ntree, mtry, seed))
+  
+  # Ensure reproducibility inside the worker
+  set.seed(seed)
+  
+  # Simulate expensive computation
+  Sys.sleep(1) 
+  
+  # Actual training
+  model <- randomForest(Species ~ ., data = data, ntree = ntree, mtry = mtry)
+  return(model)
+}
+```
+
+## 3. Experiment: Cold Cache vs. Warm Cache
+We will now train three distinct model variations.
+
+Phase A: The "Cold" Run (Training)
+These calls will take time because the cache is empty. We track the start time to measure performance.
+
+```{r}
+data(iris)
+
+cat("--- PHASE A: Initial Training (Cold Cache) ---\n")
+start_time <- Sys.time()
+
+# Model 1: Base configuration
+model_1 <- train_rf(data = iris, ntree = 500, mtry = 2, seed = 42)
+
+# Model 2: Different Hyperparameter (ntree) -> New Cache Entry
+model_2 <- train_rf(data = iris, ntree = 1000, mtry = 2, seed = 42)
+
+# Model 3: Same parameters, DIFFERENT seed -> New Cache Entry
+model_3 <- train_rf(data = iris, ntree = 500, mtry = 2, seed = 99)
+
+time_cold <- Sys.time() - start_time
+cat(sprintf("\nTotal Training Time: %.2f seconds\n", as.numeric(time_cold, units="secs")))
+```
+
+Phase B: The "Warm" Run (Retrieval)
+Now, imagine you restarted your R session or are simply knitting an RMarkdown report. You run the exact same code. cacheR detects that the inputs (and the function body) haven't changed.
+
+```{r}
+
+cat("\n--- PHASE B: Reloading Models (Warm Cache) ---\n")
+start_time <- Sys.time()
+
+# Re-requesting the exact same models
+model_1_cached <- train_rf(data = iris, ntree = 500, mtry = 2, seed = 42)
+model_2_cached <- train_rf(data = iris, ntree = 1000, mtry = 2, seed = 42)
+model_3_cached <- train_rf(data = iris, ntree = 500, mtry = 2, seed = 99)
+
+time_warm <- Sys.time() - start_time
+cat(sprintf("\nTotal Retrieval Time: %.2f seconds\n", as.numeric(time_warm, units="secs")))
+```
+
+
+Phase C: Verification
+We can verify that the models are indeed identical. Because we tracked the seed in the cache key, model_1 and model_3 (which differed only by seed) are correctly stored as separate files.
+
+```{r}
+# Verify Model 1 matches its cached version
+identical(model_1$importance, model_1_cached$importance) 
+# [1] TRUE
+
+# Verify Model 1 (Seed 42) is different from Model 3 (Seed 99)
+identical(model_1$importance, model_3$importance) 
+# [1] FALSE
+```

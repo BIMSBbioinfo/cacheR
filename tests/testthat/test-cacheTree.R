@@ -187,54 +187,57 @@ teardown_env <- function() {
 
   
 # --------------------------------------------------------#
-
-  test_that("cacheTree_changed_files detects modification and deletion", {
-    setup_env()
-    on.exit(teardown_env())
-    
-    f_mod <- tempfile() # To be modified
-    f_del <- tempfile() # To be deleted
-    f_ok  <- tempfile() # To stay same
-    
-    cat("original", file = f_mod)
-    cat("delete_me", file = f_del)
-    cat("steady", file = f_ok)
-    
-    on.exit(unlink(c(f_mod, f_del, f_ok)), add = TRUE)
-    
-    # Register Node and track files
-    .cacheTree_env$call_stack <- c("N_Check")
-    .cacheTree_register_node("N_Check", "fn", "h", "o")
-    
-    track_file(f_mod)
-    track_file(f_del)
-    track_file(f_ok)
-    
-    # Initial check: nothing should be changed immediately
-    # Note: fast_file_hash caches the state, so immediate check compares cache to disk
-    changes_init <- cacheTree_changed_files()
-    expect_length(changes_init, 0)
-    
-    # --- ACTION: Modify / Delete ---
-    
-    # Modify f_mod
-    Sys.sleep(1.1) # Ensure mtime changes on FS with low resolution
-    cat("changed content", file = f_mod)
-    
-    # Delete f_del
-    unlink(f_del)
-    
-    # --- Check Changes ---
-    changes <- cacheTree_changed_files()
-    
-    expect_true("N_Check" %in% names(changes))
-    affected_files <- changes$N_Check$changed_files
-    
-    # Check normalized paths
-    expect_true(normalizePath(f_mod) %in% affected_files)
-    expect_true(normalizePath(f_del) %in% affected_files)
-    expect_false(normalizePath(f_ok) %in% affected_files)
-  })
+test_that("cacheTree_changed_files detects modification and deletion", {
+  setup_env()
+  on.exit(teardown_env())
+  
+  f_mod <- tempfile() # To be modified
+  f_del <- tempfile() # To be deleted
+  f_ok  <- tempfile() # To stay same
+  
+  cat("original", file = f_mod)
+  cat("delete_me", file = f_del)
+  cat("steady", file = f_ok)
+  
+  on.exit(unlink(c(f_mod, f_del, f_ok)), add = TRUE)
+  
+  # Register Node and track files
+  .cacheTree_env$call_stack <- c("N_Check")
+  .cacheTree_register_node("N_Check", "fn", "h", "o")
+  
+  track_file(f_mod)
+  track_file(f_del)
+  track_file(f_ok)
+  
+  # Initial check: nothing should be changed immediately
+  changes_init <- cacheTree_changed_files()
+  expect_length(changes_init, 0)
+  
+  # --- ACTION: Modify / Delete ---
+  
+  # Modify f_mod
+  Sys.sleep(1.1) 
+  cat("changed content", file = f_mod)
+  
+  # Delete f_del
+  unlink(f_del)
+  
+  # --- Check Changes ---
+  changes <- cacheTree_changed_files()
+  
+  expect_true("N_Check" %in% names(changes))
+  affected_files <- changes$N_Check$changed_files
+  
+  # Check normalized paths
+  # 1. Modified file -> TRUE
+  expect_true(normalizePath(f_mod, mustWork = FALSE) %in% affected_files)
+  
+  # 2. Deleted file -> TRUE
+  expect_true(normalizePath(f_del, mustWork = FALSE) %in% affected_files)
+  
+  # 3. Steady file -> FALSE (This was the source of the error)
+  expect_false(normalizePath(f_ok, mustWork = FALSE) %in% affected_files)
+})
   
 # --------------------------------------------------------#
 

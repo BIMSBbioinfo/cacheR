@@ -273,14 +273,14 @@ head(res[order(res$padj), ])
 #> log2 fold change (MLE): condition B vs A 
 #> Wald test p-value: condition B vs A 
 #> DataFrame with 6 rows and 6 columns
-#>          baseMean log2FoldChange     lfcSE        stat    pvalue      padj
-#>         <numeric>      <numeric> <numeric>   <numeric> <numeric> <numeric>
-#> Gene001   322.789    0.047031744  0.107328  0.43820723  0.661236  0.993707
-#> Gene002   336.819   -0.003691388  0.111411 -0.03313292  0.973569  0.993707
-#> Gene003   338.658   -0.015187950  0.108704 -0.13971790  0.888883  0.993707
-#> Gene004   328.872    0.053297936  0.108026  0.49337992  0.621744  0.993707
-#> Gene005   329.051   -0.000984009  0.106326 -0.00925464  0.992616  0.993707
-#> Gene006   325.634   -0.040019410  0.103535 -0.38653002  0.699104  0.993707
+#>          baseMean log2FoldChange     lfcSE       stat    pvalue      padj
+#>         <numeric>      <numeric> <numeric>  <numeric> <numeric> <numeric>
+#> Gene001   291.740     0.00919475 0.1046160  0.0878905  0.929964  0.997447
+#> Gene002   302.001    -0.03833121 0.1064548 -0.3600702  0.718795  0.997447
+#> Gene003   297.447    -0.01805523 0.0969280 -0.1862746  0.852229  0.997447
+#> Gene004   292.773     0.04869326 0.1054720  0.4616702  0.644318  0.997447
+#> Gene005   293.654    -0.03899964 0.0990281 -0.3938241  0.693711  0.997447
+#> Gene006   286.112    -0.04316317 0.1167076 -0.3698404  0.711501  0.997447
 ```
 
 ------------------------------------------------------------------------
@@ -396,7 +396,7 @@ sessionInfo()
 #>  [7] matrixStats_1.0.0           GenomicRanges_1.52.0       
 #>  [9] GenomeInfoDb_1.36.2         IRanges_2.36.0             
 #> [11] S4Vectors_0.40.2            BiocGenerics_0.48.1        
-#> [13] cacheR_0.1.0                ggplot2_3.5.2              
+#> [13] cacheR_0.2.0                ggplot2_3.5.2              
 #> 
 #> loaded via a namespace (and not attached):
 #>  [1] gtable_0.3.6            xfun_0.40               bslib_0.5.1            
@@ -414,12 +414,12 @@ sessionInfo()
 #> [37] abind_1.4-5             locfit_1.5-9.8          tidyselect_1.2.1       
 #> [40] digest_0.6.37           fastmap_1.1.1           grid_4.3.2             
 #> [43] cli_3.6.5               SparseArray_1.2.0       magrittr_2.0.3         
-#> [46] S4Arrays_1.2.0          withr_3.0.2             scales_1.4.0           
-#> [49] bit64_4.0.5             rmarkdown_2.30          XVector_0.40.0         
-#> [52] bit_4.0.5               hms_1.1.3               ragg_1.5.0             
-#> [55] stringfish_0.17.0       evaluate_1.0.5          knitr_1.43             
-#> [58] rlang_1.1.6             Rcpp_1.1.0              glue_1.8.0             
-#> [61] BiocManager_1.30.22     renv_1.0.11             vroom_1.6.3            
-#> [64] jsonlite_2.0.0          R6_2.6.1                systemfonts_1.0.4      
-#> [67] fs_1.6.6                zlibbioc_1.48.2
+#> [46] S4Arrays_1.2.0          withr_3.0.2             filelock_1.0.3         
+#> [49] scales_1.4.0            bit64_4.0.5             rmarkdown_2.30         
+#> [52] XVector_0.40.0          bit_4.0.5               hms_1.1.3              
+#> [55] ragg_1.5.0              stringfish_0.17.0       evaluate_1.0.5         
+#> [58] knitr_1.43              rlang_1.1.6             Rcpp_1.1.0             
+#> [61] glue_1.8.0              BiocManager_1.30.22     renv_1.0.11            
+#> [64] vroom_1.6.3             jsonlite_2.0.0          R6_2.6.1               
+#> [67] systemfonts_1.0.4       fs_1.6.6                zlibbioc_1.48.2
 ```

@@ -15,7 +15,7 @@ test_that("cacheFile stores value and metadata in cache file", {
   # First call – should compute and write cache
   expect_equal(cached(10), 11)
   
-  # FIX: Filter for .rds or .qs files only, ignoring .lock files
+  # Filter for .rds or .qs files only, ignoring .lock files
   files <- list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE)
   expect_length(files, 1L)
 
@@ -29,9 +29,12 @@ test_that("cacheFile stores value and metadata in cache file", {
   meta <- obj$meta
   expect_true(is.list(meta))
   
-  # Basic fields we expect to be present
-  expect_true(all(c("fname", "args", "args_hash", "cache_file", "cache_dir", "created") %in% names(meta)))
-  expect_equal(meta$args$x, 10)
+  # Updated fields: 'args' is replaced by 'args_values' and 'args_exprs'
+  expected_fields <- c("fname", "args_values", "args_exprs", "args_hash", "cache_file", "cache_dir", "created")
+  expect_true(all(expected_fields %in% names(meta)))
+  
+  # Check argument tracking (Values)
+  expect_equal(meta$args_values$x, 10)
 })
 
 # --------------------------------------------- #
@@ -70,7 +73,6 @@ test_that("cached function still returns raw value despite metadata wrapper", {
 })
 
 # --------------------------------------------- #
-
 test_that("cacheInfo returns value and metadata", {
   cache_dir <- file.path(tempdir(), "cache_meta_info")
   on.exit(unlink(cache_dir, recursive = TRUE, force = TRUE))
@@ -91,7 +93,8 @@ test_that("cacheInfo returns value and metadata", {
   expect_true(all(c("value", "meta") %in% names(info)))
   expect_identical(info$value, 6)
 
-  expect_equal(info$meta$args$x, 3)
+  # FIX: 'args' is now 'args_values'
+  expect_equal(info$meta$args_values$x, 3)
 })
 
 # --------------------------------------------- #

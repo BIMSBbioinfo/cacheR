@@ -1,26 +1,27 @@
 # cacheR ![](https://img.shields.io/badge/status-experimental-orange)
 
-`cacheR` provides **recursive, file-based function caching** for R, with
-the unique ability to record **parent–child relationships** between
-cached calls.
+**cacheR** tracks your data and code so you don’t have to
 
-This is useful for:
+## What does cacheR do?
 
-- Building provenance graphs  
-- Debugging nested function calls  
-- Understanding how a function tree produces a result  
+It automatically checks for changes in code and input data and re-runs
+the code if necessary.
+
+It’s like snakemake/nextflow, but on the fly
+
+## What is it useful for?
+
+- Keeping the analysis up to date
+
+- Saving time
+
+- Not using obsolete results
+
 - Reusing heavy computations safely and transparently
-
-The package introduces:
-
-- [`cacheFile()`](https://BIMSBbioinfo.github.io/cacheR/reference/cacheFile.md)
-  — a caching decorator  
-- `%@%` — an operator for applying decorators  
-- `cacheTree_*()` — functions for inspecting the cache tree
 
 ------------------------------------------------------------------------
 
-## 🚀 Installation
+### 🚀 Installation
 
 ``` r
 
@@ -29,7 +30,16 @@ The package introduces:
 remotes::install_github("BIMSBbioinfo/cacheR")
 ```
 
-Basic usage
+### Basic usage
+
+The package introduces:
+
+- [`cacheFile()`](https://BIMSBbioinfo.github.io/cacheR/reference/cacheFile.md)
+  — a caching decorator  
+- `%@%` — an operator for applying decorators  
+- `cacheTree_*()` — functions for inspecting the cache tree
+
+&nbsp;
 
     library(cacheR)
 
@@ -43,6 +53,43 @@ Basic usage
     # Execute
     outer(3)
     #> 8
+
+### How does cacheR decide to recompute?
+
+A cached call is reused **only if** all of the following are unchanged:
+
+- The **function body** (including inline code changes)
+- The **arguments** (up to hashing / comparison rules)
+- The **tracked files / directories**, where relevant
+- The **package versions** of any non-base functions used
+- The **environment variables** used by the function
+
+If any of these change, cacheR invalidates the old entry and recomputes.
+
+### Limitations & caveats
+
+- **Package boundaries:**  
+  cacheR stops tracking when it hits a function imported from a
+  package.  
+  Instead, it records the package name and version. It does not inspect
+  the internals of those functions.
+
+- **Native code / C / external tools:**  
+  C/C++ code and external tools (e.g. `system("bwa mem ...")`) are not
+  tracked. If they change, cacheR will not notice unless their inputs /
+  outputs change in a tracked place.
+
+- **Side effects:**  
+  Functions with side effects (writing to global variables, random
+  seeds, databases, etc.) are not fully “safe” to cache. Prefer pure,
+  data-in/data-out functions.
+
+#### When you probably *shouldn’t* use cacheR
+
+- Highly stateful / interactive code where caching would confuse you
+  more than it helps
+- Situations where you need full workflow orchestration, scheduling, and
+  cluster execution (use snakemake/nextflow/targets/etc. instead)
 
 # Package index
 

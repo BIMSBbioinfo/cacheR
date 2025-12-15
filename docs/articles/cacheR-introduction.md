@@ -35,7 +35,7 @@ For this vignette we’ll use a **temporary cache directory**:
 cache_dir <- file.path(tempdir(), "cacheR-demo")
 dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
 cache_dir
-#> [1] "/local/vfranke/Tmp/RtmpVJ2w7C/cacheR-demo"
+#> [1] "/local/vfranke/Tmp/Rtmp0f9RCf/cacheR-demo"
 ```
 
 ------------------------------------------------------------------------
@@ -84,10 +84,11 @@ x <- rnorm(1e5)
 system.time(res1 <- cached_stat_summary(x))
 #> Computing stats ...
 #>    user  system elapsed 
-#>   0.009   0.000   1.010
+#>   0.066   0.000   1.068
 system.time(res2 <- cached_stat_summary(x))
+#> Computing stats ...
 #>    user  system elapsed 
-#>   0.001   0.000   0.001
+#>   0.020   0.000   1.021
 
 res1
 #> $mean
@@ -170,10 +171,11 @@ mat <- matrix(rnorm(200 * 10), ncol = 10)
 system.time(res1 <- cached_cor_with_moments(mat))
 #> Computing correlations and moments ...
 #>    user  system elapsed 
-#>   0.004   0.000   1.004
+#>   0.015   0.000   1.016
 system.time(res2 <- cached_cor_with_moments(mat))
+#> Computing correlations and moments ...
 #>    user  system elapsed 
-#>   0.000   0.000   0.001
+#>   0.022   0.000   1.024
 
 str(res1$cor)
 #>  num [1:10, 1:10] 1 -0.0277 -0.0302 -0.0464 -0.0513 ...
@@ -247,10 +249,12 @@ system.time(a1 <- analyze_scaled(mat2))
 #> Analyzing scaled data ...
 #> Preprocessing matrix (center & scale) ...
 #>    user  system elapsed 
-#>   0.006   0.000   1.007
+#>   0.093   0.012   1.106
 system.time(a2 <- analyze_scaled(mat2))
+#> Analyzing scaled data ...
+#> Preprocessing matrix (center & scale) ...
 #>    user  system elapsed 
-#>   0.001   0.000   0.001
+#>   0.096   0.000   1.097
 
 identical(a1$cor, a2$cor)
 #> [1] TRUE
@@ -273,35 +277,66 @@ the relationships between cached calls:
 
 cacheTree_reset()
 a <- analyze_scaled(mat2)
+#> Analyzing scaled data ...
+#> Preprocessing matrix (center & scale) ...
 nodes <- cacheTree_nodes()
 nodes
-#> $`analyze_scaled:88c7ed8bc6ae408d`
-#> $`analyze_scaled:88c7ed8bc6ae408d`$id
-#> [1] "analyze_scaled:88c7ed8bc6ae408d"
+#> $`analyze_scaled:1d1688595a8bc57d`
+#> $`analyze_scaled:1d1688595a8bc57d`$id
+#> [1] "analyze_scaled:1d1688595a8bc57d"
 #> 
-#> $`analyze_scaled:88c7ed8bc6ae408d`$fname
+#> $`analyze_scaled:1d1688595a8bc57d`$fname
 #> [1] "analyze_scaled"
 #> 
-#> $`analyze_scaled:88c7ed8bc6ae408d`$hash
-#> [1] "88c7ed8bc6ae408d"
+#> $`analyze_scaled:1d1688595a8bc57d`$hash
+#> [1] "1d1688595a8bc57d"
 #> 
-#> $`analyze_scaled:88c7ed8bc6ae408d`$outfile
-#> [1] "/local/vfranke/Tmp/RtmpVJ2w7C/cacheR-demo/analyze_scaled.88c7ed8bc6ae408d.qs"
+#> $`analyze_scaled:1d1688595a8bc57d`$outfile
+#> [1] "/local/vfranke/Tmp/Rtmp0f9RCf/cacheR-demo/analyze_scaled.1d1688595a8bc57d.qs"
 #> 
-#> $`analyze_scaled:88c7ed8bc6ae408d`$parents
+#> $`analyze_scaled:1d1688595a8bc57d`$parents
 #> character(0)
 #> 
-#> $`analyze_scaled:88c7ed8bc6ae408d`$children
+#> $`analyze_scaled:1d1688595a8bc57d`$children
+#> [1] "cached_preprocess_matrix:7cb592a080a4e3d9"
+#> 
+#> $`analyze_scaled:1d1688595a8bc57d`$files
 #> character(0)
 #> 
-#> $`analyze_scaled:88c7ed8bc6ae408d`$files
+#> $`analyze_scaled:1d1688595a8bc57d`$file_hashes
 #> character(0)
 #> 
-#> $`analyze_scaled:88c7ed8bc6ae408d`$file_hashes
+#> $`analyze_scaled:1d1688595a8bc57d`$created
+#> [1] "2025-12-15 14:45:06 CET"
+#> 
+#> 
+#> $`cached_preprocess_matrix:7cb592a080a4e3d9`
+#> $`cached_preprocess_matrix:7cb592a080a4e3d9`$id
+#> [1] "cached_preprocess_matrix:7cb592a080a4e3d9"
+#> 
+#> $`cached_preprocess_matrix:7cb592a080a4e3d9`$fname
+#> [1] "cached_preprocess_matrix"
+#> 
+#> $`cached_preprocess_matrix:7cb592a080a4e3d9`$hash
+#> [1] "7cb592a080a4e3d9"
+#> 
+#> $`cached_preprocess_matrix:7cb592a080a4e3d9`$outfile
+#> [1] "/local/vfranke/Tmp/Rtmp0f9RCf/cacheR-demo/cached_preprocess_matrix.7cb592a080a4e3d9.qs"
+#> 
+#> $`cached_preprocess_matrix:7cb592a080a4e3d9`$parents
+#> [1] "analyze_scaled:1d1688595a8bc57d"
+#> 
+#> $`cached_preprocess_matrix:7cb592a080a4e3d9`$children
 #> character(0)
 #> 
-#> $`analyze_scaled:88c7ed8bc6ae408d`$created
-#> [1] "2025-12-02 16:31:40 CET"
+#> $`cached_preprocess_matrix:7cb592a080a4e3d9`$files
+#> character(0)
+#> 
+#> $`cached_preprocess_matrix:7cb592a080a4e3d9`$file_hashes
+#> character(0)
+#> 
+#> $`cached_preprocess_matrix:7cb592a080a4e3d9`$created
+#> [1] "2025-12-15 14:45:06 CET"
 ```
 
 You should see at least two nodes:
@@ -345,19 +380,29 @@ mat_big <- matrix(rnorm(500 * 50), ncol = 50)
 system.time(r1 <- cached_cor_qs(mat_big))
 #> Computing correlations and moments ...
 #>    user  system elapsed 
-#>   0.017   0.000   1.019
+#>   0.020   0.000   1.022
 system.time(r2 <- cached_cor_qs(mat_big))
+#> Computing correlations and moments ...
 #>    user  system elapsed 
-#>   0.001   0.000   0.001
+#>   0.022   0.000   1.023
 
 identical(r1$cor, r2$cor)
 #> [1] TRUE
 list.files(cache_dir, recursive = TRUE)
-#> [1] "analyze_scaled.88c7ed8bc6ae408d.qs"          
-#> [2] "cached_cor_qs.9a5887591cc30d22.qs"           
-#> [3] "cached_cor_with_moments.458b9d5fd0c6e8da.rds"
-#> [4] "cached_preprocess_matrix.eb193d19e30e3ec8.qs"
-#> [5] "cached_stat_summary.d199ddc8223d7981.rds"
+#>  [1] "analyze_scaled.1d1688595a8bc57d.qs"               
+#>  [2] "analyze_scaled.1d1688595a8bc57d.qs.lock"          
+#>  [3] "analyze_scaled.81d18fe70cb47251.qs"               
+#>  [4] "analyze_scaled.81d18fe70cb47251.qs.lock"          
+#>  [5] "analyze_scaled.aa7335214aa59a2a.qs"               
+#>  [6] "analyze_scaled.aa7335214aa59a2a.qs.lock"          
+#>  [7] "cached_cor_qs.be2ae6e8d7cbfde6.qs"                
+#>  [8] "cached_cor_qs.be2ae6e8d7cbfde6.qs.lock"           
+#>  [9] "cached_cor_with_moments.c1c402a33d2d261d.rds"     
+#> [10] "cached_cor_with_moments.c1c402a33d2d261d.rds.lock"
+#> [11] "cached_preprocess_matrix.7cb592a080a4e3d9.qs"     
+#> [12] "cached_preprocess_matrix.7cb592a080a4e3d9.qs.lock"
+#> [13] "cached_stat_summary.c7b201d2f3a96f11.rds"         
+#> [14] "cached_stat_summary.c7b201d2f3a96f11.rds.lock"
 ```
 
 You should see some `.qs` files in the cache directory.
@@ -423,7 +468,7 @@ Usage:
 ``` r
 
 res <- cached_file_stats(example_csv)
-#> Reading CSV: /local/vfranke/Tmp/RtmpVJ2w7C/my_data.csv
+#> Reading CSV: /local/vfranke/Tmp/Rtmp0f9RCf/my_data.csv
 #> Computing correlations and moments ...
 res$mean
 #>          x          y          z 

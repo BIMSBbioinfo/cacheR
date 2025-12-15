@@ -399,3 +399,199 @@ test_that("xxhash64 backend works and produces valid filenames", {
   files <- list.files(cache_dir, pattern = "\\.rds$")
   expect_equal(length(files), 2)
 })
+
+
+# ---------------------------------------------------------------- #
+# FEATURE 1: Dual Hashing (Values AND Expressions)
+# ---------------------------------------------------------------- #
+
+test_that("Cache invalidates when VALUES change (even if expression is same)", {
+  cache_dir <- file.path(tempdir(), "test_values_change")
+  on.exit(unlink(cache_dir, recursive = TRUE))
+  dir.create(cache_dir, showWarnings=FALSE)
+  
+  # Function returns a run ID (timestamp)
+  f <- cacheFile(cache_dir) %@% function(a) {
+    as.numeric(Sys.time())
+  }
+  
+  # 1. Setup variable
+  x <- 10
+  
+  # Run 1
+  id1 <- f(x)
+  
+  # 2. Modify value of x
+  x <- 20
+  Sys.sleep(1.1)
+  
+  # Run 2: Expression passed is still 'x', but value is 20.
+  # Must re-run (Miss).
+  id2 <- f(x)
+  
+  expect_false(id1 == id2)
+})
+
+test_that("Cache invalidates when EXPRESSIONS change (even if value is same)", {
+  cache_dir <- file.path(tempdir(), "test_expr_change")
+  on.exit(unlink(cache_dir, recursive = TRUE))
+  dir.create(cache_dir, showWarnings=FALSE)
+  
+  f <- cacheFile(cache_dir) %@% function(a) {
+    as.numeric(Sys.time())
+  }
+  
+  # 1. Setup variables
+  val_A <- 100
+  val_B <- 100 # Identical value
+  
+  # Run 1: Pass 'val_A'
+  id1 <- f(val_A)
+  
+  Sys.sleep(1.1)
+  
+  # Run 2: Pass 'val_B'
+  # Value is identical (100), but the source code (expression) changed from 'val_A' to 'val_B'.
+  # Ideally, this should be a MISS to ensure provenance safety.
+  id2 <- f(val_B)
+  
+  expect_false(id1 == id2)
+})
+
+test_that("Cache invalidates when LITERALS change to VARIABLES (even if value is same)", {
+  cache_dir <- file.path(tempdir(), "test_literal_vs_var")
+  on.exit(unlink(cache_dir, recursive = TRUE))
+  dir.create(cache_dir, showWarnings=FALSE)
+  
+  f <- cacheFile(cache_dir) %@% function(a) {
+    as.numeric(Sys.time())
+  }
+  
+  x <- 50
+  
+  # Run 1: Literal 50
+  id1 <- f(50)
+  
+  Sys.sleep(1.1)
+  
+  # Run 2: Variable x (value is 50)
+  # Expression changed from `50` to `x`. Should Miss.
+  id2 <- f(x)
+  
+  expect_false(id1 == id2)
+})
+
+# ---------------------------------------------------------------- #
+# FEATURE 2: Deterministic Dots (...)
+# ---------------------------------------------------------------- #
+
+test_that("Dots (...) are order-independent (sorted by name)", {
+  cache_dir <- file.path(tempdir(), "test_dots_order")
+  on.exit(unlink(cache_dir, recursive = TRUE))
+  dir.create(cache_dir, showWarnings=FALSE)
+  
+  f <- cacheFile(cache_dir) %@% function(...) {
+    list(args = list(...), id = as.numeric(Sys.time()))
+  }
+  
+  # Run 1: a=1, b=2
+  res1 <- f(a=1, b=2)
+  
+  # Run 2: b=2, a=1 (Different order)
+  # The hasher sorts named arguments, so this should match (HIT).
+  res2 <- f(b=2, a=1)
+  
+  expect_equal(res1$id, res2$id)
+})
+
+test_that("Dots (...) detect new arguments", {
+  cache_dir <- file.path(tempdir(), "test_dots_new")
+  on.exit(unlink(cache_dir, recursive = TRUE))
+  dir.create(cache_dir, showWarnings=FALSE)
+  
+  f <- cacheFile(cache_dir) %@% function(...) {
+    as.numeric(Sys.time())
+  }
+  
+  id1 <- f(a=1)
+  Sys.sleep(1.1)
+  id2 <- f(a=1, b=2)
+  
+  expect_false(id1 == id2)
+})
+
+# -------------------------------------------------------- #
+
+test_that("Cache persists across separate R sessions (Disk Persistence)", {
+  skip_if_not_installed("callr")
+  skip_if_not_installed("pkgload") 
+  
+  cache_dir <- file.path(tempdir(), "cache_cross_session")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE)
+  on.exit(unlink(cache_dir, recursive = TRUE), add = TRUE)
+
+  find_pkg_root <- function() {
+    path <- "."
+    for (i in 1:5) {
+      if (file.exists(file.path(path, "DESCRIPTION"))) return(normalizePath(path))
+      path <- file.path(path, "..")
+    }
+    stop("Could not find package root containing DESCRIPTION")
+  }
+  
+  pkg_root <- find_pkg_root()
+
+  # Define the job
+  run_job <- function(dir, pkg_root) {
+    # Load package
+    if (!requireNamespace("cacheR", quietly = TRUE)) {
+      if (!requireNamespace("pkgload", quietly = TRUE)) stop("Need pkgload")
+      pkgload::load_all(pkg_root, quiet = TRUE)
+    } else {
+      library(cacheR)
+    }
+    
+    # Define cached worker
+    # Returns the TIME it ran (to verify caching)
+    worker <- cacheFile(dir) %@% function(x) {
+      Sys.sleep(0.5)
+      list(
+        val = x^2,
+        timestamp = as.numeric(Sys.time()),
+        cached_pid = Sys.getpid() # This gets baked into the cache
+      )
+    }
+    
+    # Return BOTH the actual process ID and the cached result
+    list(
+      real_pid = Sys.getpid(),  # <--- Captured OUTSIDE the cache
+      result = worker(10)       # <--- Captured INSIDE the cache
+    )
+  }
+
+  # --- SESSION A ---
+  session_a <- callr::r(run_job, args = list(dir = cache_dir, pkg_root = pkg_root))
+  
+  # Ensure time ticks forward
+  Sys.sleep(1.5)
+
+  # --- SESSION B ---
+  session_b <- callr::r(run_job, args = list(dir = cache_dir, pkg_root = pkg_root))
+  
+  # ---------------------------------------------------------------- #
+  # VERIFICATION
+  # ---------------------------------------------------------------- #
+  
+  # 1. Verify the PROCESSES were different (using the PID captured outside)
+  expect_false(session_a$real_pid == session_b$real_pid)
+  
+  # 2. Verify the CACHE HIT (using the timestamp captured inside)
+  # Session B should return the timestamp from Session A
+  expect_equal(session_a$result$timestamp, session_b$result$timestamp)
+  
+  # 3. Verify the PID WAS CACHED (Optional Proof)
+  # The 'cached_pid' returned by Session B will be Session A's PID, 
+  # because it loaded the result from disk!
+  expect_equal(session_a$result$cached_pid, session_b$result$cached_pid)
+})

@@ -1,5 +1,4 @@
-library(testthat)
-library(mockery)
+
 # --------------------------------------------------------#
 test_that("cache invalidates when a dependent package version changes", {
   
@@ -49,4 +48,37 @@ test_that("version checker is propagated recursively to inner functions", {
   # If propagation FAILED, 'h2' would equal 'h1' (because it would have fallen back 
   # to the real installed package version for both runs).
   expect_false(h1 == h2)
+})
+
+# ---------------------------------------------------------------- #
+# AST Package Detection
+# ---------------------------------------------------------------- #
+
+test_that("AST scanning detects pkg::fun calls and records in metadata", {
+  cache_dir <- file.path(tempdir(), "test_ast_pkg")
+  on.exit(unlink(cache_dir, recursive = TRUE))
+  dir.create(cache_dir, showWarnings=FALSE)
+  
+  # Define function with explicit package call
+  # We use 'utils::head' as the target.
+  # Note: The scanner scans the *body* of the function.
+  f <- cacheFile(cache_dir, backend = "rds") %@% function(x) {
+    # Using '::' triggers the scanner
+    utils::head(x, 1) 
+    return(as.numeric(Sys.time()))
+  }
+  
+  # Run 1
+  f(cars)
+  
+  # Verify Metadata
+  # We read the generated cache file to check if "utils" is in the 'pkgs' list.
+  files <- list.files(cache_dir, pattern = "\\.rds$", full.names=TRUE)
+  expect_true(length(files) > 0)
+  
+  meta <- readRDS(files[1])$meta
+  
+  # 'pkgs' should be a named vector where names are packages and values are versions
+  expect_true("utils" %in% names(meta$pkgs))
+  expect_true(nchar(meta$pkgs[["utils"]]) > 0)
 })
