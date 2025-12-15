@@ -19,8 +19,9 @@ teardown_env <- function() {
 # TESTS
 # =========================================================================
 
-describe("Graph State Management", {
   
+# --------------------------------------------------------#
+
   test_that("cacheTree_reset clears the environment", {
     setup_env()
     
@@ -37,6 +38,8 @@ describe("Graph State Management", {
     expect_length(.cacheTree_env$call_stack, 0)
   })
   
+# --------------------------------------------------------#
+
   test_that("Node registration works and handles parent-child linking", {
     setup_env()
     on.exit(teardown_env())
@@ -68,10 +71,10 @@ describe("Graph State Management", {
     expect_equal(nodes$B$parents, "A")
     expect_equal(nodes$B$children, character(0))
   })
-})
 
-describe("Persistence (Save/Load)", {
-  
+ 
+# --------------------------------------------------------#
+ 
   test_that("cacheTree_save and cacheTree_load preserve structure", {
     setup_env()
     on.exit(teardown_env())
@@ -94,10 +97,10 @@ describe("Persistence (Save/Load)", {
     expect_true("N1" %in% names(nodes))
     expect_equal(nodes$N1$fname, "f1")
   })
-})
 
-describe("File Hashing & Tracking", {
   
+# --------------------------------------------------------#
+
   test_that("probabilistic_file_hash is deterministic", {
     # Create a dummy file larger than block size to trigger sampling
     tf <- tempfile()
@@ -106,13 +109,15 @@ describe("File Hashing & Tracking", {
     # Write 200KB of random data
     writeBin(as.raw(sample(0:255, 200 * 1024, replace=TRUE)), tf)
     
-    h1 <- probabilistic_file_hash(tf)
-    h2 <- probabilistic_file_hash(tf)
+    h1 <- .probabilistic_file_hash(tf)
+    h2 <- .probabilistic_file_hash(tf)
     
     expect_false(is.na(h1))
     expect_equal(h1, h2)
   })
   
+# --------------------------------------------------------#
+
   test_that("fast_file_hash uses memoization but detects size changes", {
     setup_env()
     on.exit(teardown_env())
@@ -123,7 +128,7 @@ describe("File Hashing & Tracking", {
     cat("Hello", file = tf)
     
     # First hash
-    h1 <- fast_file_hash(tf)
+    h1 <- .fast_file_hash(tf)
     
     # Verify it is stored in the cache
     expect_true(tf %in% ls(.file_state_cache))
@@ -131,11 +136,13 @@ describe("File Hashing & Tracking", {
     # Modify file content (and size)
     cat("Hello World", file = tf)
     
-    h2 <- fast_file_hash(tf)
+    h2 <- .fast_file_hash(tf)
     
     expect_false(identical(h1, h2))
   })
-  
+ 
+# --------------------------------------------------------#
+ 
   test_that("track_file associates file with current node", {
     setup_env()
     on.exit(teardown_env())
@@ -177,10 +184,10 @@ describe("File Hashing & Tracking", {
     res_fail <- cacheTree_for_file("non/existent/path")
     expect_length(res_fail, 0)
   })
-})
 
-describe("Change Detection", {
   
+# --------------------------------------------------------#
+
   test_that("cacheTree_changed_files detects modification and deletion", {
     setup_env()
     on.exit(teardown_env())
@@ -228,10 +235,9 @@ describe("Change Detection", {
     expect_true(normalizePath(f_del) %in% affected_files)
     expect_false(normalizePath(f_ok) %in% affected_files)
   })
-})
-
-describe("Utilities", {
   
+# --------------------------------------------------------#
+
   test_that("cacheR_default_dir creates directory if missing", {
     tmp_dir <- file.path(tempdir(), ".cacheR_test")
     if(dir.exists(tmp_dir)) unlink(tmp_dir, recursive = TRUE)
@@ -269,4 +275,3 @@ describe("Utilities", {
     expect_false(file.exists(f_old))
     expect_true(file.exists(f_new))
   })
-})

@@ -77,6 +77,15 @@
 
 #' Create a robust, disk-backed caching decorator
 #' @export
+#' Create a robust, disk-backed caching decorator
+#' 
+#' @param cache_dir Directory to store cache files.
+#' @param backend Serialization backend ("rds" or "qs").
+#' @param ignore_args Character vector of argument names to exclude from the hash.
+#' @param file_pattern Regex pattern for file dependencies.
+#' @param env_vars Character vector of environment variables to include in the hash.
+#' @param algo Hashing algorithm to use (default "xxhash64").
+#' @export
 cacheFile <- function(cache_dir    = NULL,
                       backend      = getOption("cacheR.backend", "rds"),
                       ignore_args  = NULL,
@@ -103,7 +112,9 @@ cacheFile <- function(cache_dir    = NULL,
     fname <- gsub("[^a-zA-Z0-9_]", "_", fname)
     if (nchar(fname) > 50) fname <- substring(fname, 1, 50)
     
-    # Parse Args
+    # ---------------------------------------------------------- #
+    # 1. Parse and Standardize Arguments
+    # ---------------------------------------------------------- #
     call_matched  <- match.call(definition = f, expand.dots = TRUE)
     args_supplied <- as.list(call_matched)[-1]
     f_formals     <- formals(f)
@@ -119,7 +130,9 @@ cacheFile <- function(cache_dir    = NULL,
     if (!is.null(ignore_args)) args_for_hash <- args_for_hash[ !names(args_for_hash) %in% ignore_args ]
     if (length(args_for_hash) > 0) args_for_hash <- args_for_hash[order(names(args_for_hash))]
     
-    # SCAN ARGS
+    # ---------------------------------------------------------- #
+    # 2. Compute Hashes (Args, Files, Closure, Env)
+    # ---------------------------------------------------------- #
     local_path_hasher <- function(p) .get_path_hash(p, file_pattern = file_pattern, algo = algo)
     evaluated_args <- lapply(args_for_hash, function(expr) {
       tryCatch(eval(expr, envir = invoke_env), error = function(e) NULL)
@@ -153,7 +166,9 @@ cacheFile <- function(cache_dir    = NULL,
     args_hash <- digest::digest(hashlist, algo = algo)
     outfile   <- file.path(cache_dir, paste(fname, args_hash, backend, sep = "."))
     
-    # Tree Hooks
+    # ---------------------------------------------------------- #
+    # 3. Cache Tree Hooks (Optional)
+    # ---------------------------------------------------------- #
     node_id <- paste(fname, args_hash, sep = ":")
     if (exists(".cacheTree_register_node", mode = "function")) {
       .cacheTree_register_node(node_id, fname, args_hash, outfile)
@@ -173,14 +188,42 @@ cacheFile <- function(cache_dir    = NULL,
       }
     }
     
+    # ---------------------------------------------------------- #
+    # 4. LOAD: Check Cache
+    # ---------------------------------------------------------- #
     if (.load && file.exists(outfile)) {
-      res <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
-      if (!is.null(res)) return(res)
+      cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
+      
+      if (!is.null(cached_obj)) {
+        # New Format: list(value = ..., meta = ...)
+        if (is.list(cached_obj) && "value" %in% names(cached_obj) && "meta" %in% names(cached_obj)) {
+          return(cached_obj$value)
+        }
+        # Legacy Format: list(dat = ..., meta = ...)
+        if (is.list(cached_obj) && "dat" %in% names(cached_obj)) {
+          return(cached_obj$dat)
+        }
+        # Fallback: Raw object
+        return(cached_obj)
+      }
     }
     
+    # ---------------------------------------------------------- #
+    # 5. MISS: Compute and Save
+    # ---------------------------------------------------------- #
     dat <- f(...)
     
-    save_data <- list(dat = dat, meta = hashlist)
+    # Construct Full Metadata (Satisfies cacheInfo tests)
+    full_meta <- c(hashlist, list(
+       fname      = fname,
+       args_hash  = args_hash,
+       cache_dir  = normalizePath(cache_dir, winslash = "/", mustWork = FALSE),
+       cache_file = normalizePath(outfile, winslash = "/", mustWork = FALSE),
+       created    = Sys.time()
+    ))
+    
+    save_data <- list(value = dat, meta = full_meta)
+    
     do_save <- function() .atomic_save(save_data, outfile, backend)
 
     if (requireNamespace("filelock", quietly = TRUE)) {
@@ -188,9 +231,14 @@ cacheFile <- function(cache_dir    = NULL,
       lock <- tryCatch(filelock::lock(lockfile, timeout = 5000), error = function(e) NULL)
       if (!is.null(lock)) {
         on.exit(filelock::unlock(lock), add = TRUE)
+        # Double-check cache after acquiring lock (Race condition prevention)
         if (.load && file.exists(outfile)) {
-           res <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
-           if (!is.null(res)) return(res)
+           cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
+           if (!is.null(cached_obj)) {
+             if (is.list(cached_obj) && "value" %in% names(cached_obj)) return(cached_obj$value)
+             if (is.list(cached_obj) && "dat" %in% names(cached_obj)) return(cached_obj$dat)
+             return(cached_obj)
+           }
         }
         do_save()
       } else { do_save() }

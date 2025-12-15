@@ -178,7 +178,7 @@ cacheTree_changed_files <- function() {
       if (!file.exists(p)) {
         changed[i] <- TRUE
       } else {
-        new_hash <- fast_file_hash(p)
+        new_hash <- .fast_file_hash(p)
         changed[i] <- !identical(old_hash, new_hash)
       }
     }

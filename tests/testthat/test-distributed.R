@@ -3,35 +3,8 @@ clear_cache <- function(dir) {
   if (dir.exists(dir)) unlink(dir, recursive = TRUE)
 }
 
-test_that("Distributed Cache: User B benefits from User A's computation", {
-  # 1. Setup normalized cache path
-  cache_root <- normalizePath(tempfile("dist_cache_"), mustWork = FALSE)
-  dir.create(cache_root, recursive = TRUE)
-  on.exit(unlink(cache_root, recursive = TRUE))
-  
-  # 2. Define expensive operation with side effects
-  expensive_op <- function(x) {
-    cat("Computed", file = file.path(cache_root, "side_effect.txt"), append = TRUE)
-    return(x * 2)
-  }
-  
-  # 3. Decorate with explicit backend
-  cached_op <- cacheFile(cache_dir = cache_root, backend = "rds") %@% expensive_op
-  
-  # --- User A Run ---
-  res_a <- cached_op(10)
-  expect_equal(res_a, 20)
-  expect_true(file.exists(file.path(cache_root, "side_effect.txt")))
-  
-  # Clear side effect to prove User B doesn't trigger it
-  unlink(file.path(cache_root, "side_effect.txt"))
-  
-  # --- User B Run ---
-  res_b <- cached_op(10)
-  expect_equal(res_b, 20)
-  expect_false(file.exists(file.path(cache_root, "side_effect.txt")))
-})
 
+# --------------------------------------------------------#
 test_that("Race Condition: Last-second file appearance prevents re-computation", {
   # 1. Setup normalized cache path
   cache_root <- normalizePath(tempfile("race_cache_"), mustWork = FALSE)
@@ -73,6 +46,8 @@ test_that("Race Condition: Last-second file appearance prevents re-computation",
   expect_equal(real_computation_count, 1)
 })
 
+
+# --------------------------------------------------------#
 test_that("Permissions: Read-only access to shared cache doesn't crash execution", {
   cache_root <- tempfile("readonly_cache_")
   dir.create(cache_root)

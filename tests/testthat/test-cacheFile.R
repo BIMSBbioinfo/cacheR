@@ -30,39 +30,42 @@ test_that("cacheFile works with basic caching behavior", {
 # --------------------------------------------------------#
 
 test_that("cacheFile caches results and avoids re-running", {
-  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  cache_dir <- file.path(tempdir(), "cache_test_no_counter")
+  on.exit(unlink(cache_dir, recursive = TRUE, force = TRUE))
   
-  cache_dir <- file.path(tempdir(), "cache_test_1")
-  unlink(cache_dir, recursive = TRUE, force = TRUE)
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-  
-  # Use 'options' to store state. 
-  # The static analyzer sees 'getOption' (base function) but does not 
-  # see the value inside the option, so the hash remains stable.
-  options(cacheR_test_runs = 0)
-  on.exit(options(cacheR_test_runs = NULL))
-  
-  cached_fun <- cacheFile(cache_dir) %@% function(x) {
-    # Increment counter invisibly to the hasher
-    current <- getOption("cacheR_test_runs")
-    options(cacheR_test_runs = current + 1)
-    x * 2
+  # Strategy: Return a unique ID (Time) that changes every time the body runs.
+  f <- function(x) {
+    list(
+      val = x * 2,
+      run_id = as.numeric(Sys.time())
+    )
   }
   
-  # First call: should run the body
-  expect_equal(cached_fun(10), 20)
-  expect_equal(getOption("cacheR_test_runs"), 1L)
+  cached_fun <- cacheFile(cache_dir) %@% f
   
-  # Second call: hash of function body + deps (base::options) is identical.
-  # Should hit cache. Counter should NOT increment.
-  expect_equal(cached_fun(10), 20)
-  expect_equal(getOption("cacheR_test_runs"), 1L)
+  # --- Run 1 ---
+  res1 <- cached_fun(10)
+  expect_equal(res1$val, 20)
   
-  # Different args => new cache entry, new run
-  expect_equal(cached_fun(5), 10)
-  expect_equal(getOption("cacheR_test_runs"), 2L)
+  # Sleep to ensure time would definitely change if it re-ran
+  Sys.sleep(1.1)
   
-  unlink(cache_dir, recursive = TRUE)
+  # --- Run 2 (Same Args) ---
+  res2 <- cached_fun(10)
+  
+  # A. Value should match
+  expect_equal(res2$val, 20)
+  
+  # B. Run ID must match exactly (Proves it loaded from disk)
+  # If this fails, the function re-executed.
+  expect_equal(res1$run_id, res2$run_id)
+  
+  # --- Run 3 (Different Args) ---
+  res3 <- cached_fun(5)
+  expect_equal(res3$val, 10)
+  
+  # Run ID must differ (New calculation)
+  expect_false(res1$run_id == res3$run_id)
 })
 
 # --------------------------------------------------------#
@@ -200,7 +203,7 @@ test_that("cacheFile works with 'qs' backend", {
   # Verify we can load it back manually
   cache_path <- file.path(cache_dir, files[1])
   loaded <- qs::qread(cache_path)
-  expect_equal(loaded$dat, 20)
+  expect_equal(loaded$value, 20)
 })
 
 # --------------------------------------------------------#
