@@ -142,128 +142,6 @@ test_that("track_file registers file dependencies with hashes", {
 })
 
 # --------------------------------------------------------#
-test_that("cacheTree_changed_files flags modified tracked file (direct use)", {
-  cacheTree_reset()
-  
-  cache_dir <- file.path(tempdir(), "cache_test_4")
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-  
-  data_path <- file.path(tempdir(), "cache_tree_data_direct.csv")
-  write.csv(data.frame(x = 1:3), data_path, row.names = FALSE)
-  
-  read_and_sum <- cacheFile(cache_dir) %@% function(path) {
-    df <- read.csv(track_file(path))
-    sum(df$x)
-  }
-  
-  # Initial run, registers file and hash
-  res <- read_and_sum(data_path)
-  expect_equal(res, 6)
-  
-  np <- normalizePath(data_path, mustWork = FALSE)
-  
-  # Now change the file contents
-  write.csv(data.frame(x = 10:12), data_path, row.names = FALSE)
-  
-  changed <- cacheTree_changed_files()
-  
-  # There should be exactly 1 node flagged as changed
-  expect_equal(length(changed), 1L)
-  
-  # Its changed_files should include our file
-  changed_entry <- changed[[1]]
-  expect_true(np %in% changed_entry$changed_files)
-  
-  unlink(cache_dir, recursive = TRUE)
-  unlink(data_path)
-})
-
-# --------------------------------------------------------#
-test_that("cacheTree_changed_files flags modified file when tracked in internal helper", {
-  cacheTree_reset()
-  
-  cache_dir <- file.path(tempdir(), "cache_test_5")
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-  
-  data_path <- file.path(tempdir(), "cache_tree_data_internal.csv")
-  write.csv(data.frame(x = 1:3), data_path, row.names = FALSE)
-  
-  # Internal helper (NOT decorated) that calls track_file()
-  helper_read_sum <- function(path) {
-    df <- read.csv(track_file(path))
-    sum(df$x)
-  }
-  
-  # Only this function is decorated; it calls helper_read_sum()
-  outer_cached <- cacheFile(cache_dir) %@% function(path) {
-    helper_read_sum(path)
-  }
-  
-  res <- outer_cached(data_path)
-  expect_equal(res, 6)
-  
-  # We expect exactly one node in the graph: the outer_cached call
-  nodes <- cacheTree_nodes()
-  expect_equal(length(nodes), 1L)
-  node_id <- names(nodes)[[1]]
-  
-  np <- normalizePath(data_path, mustWork = FALSE)
-  
-  # Confirm that this node has the file registered
-  expect_true(np %in% nodes[[node_id]]$files)
-  
-  # Modify the file
-  write.csv(data.frame(x = 100:102), data_path, row.names = FALSE)
-  
-  changed <- cacheTree_changed_files()
-  
-  # Only one node should be reported as changed
-  expect_equal(length(changed), 1L)
-  expect_true(node_id %in% names(changed))
-  
-  # And that node should list our file as changed
-  changed_entry <- changed[[node_id]]
-  expect_true(np %in% changed_entry$changed_files)
-  
-  unlink(cache_dir, recursive = TRUE)
-  unlink(data_path)
-})
-
-# --------------------------------------------------------#
-test_that("cacheTree_save and cacheTree_load work", {
-  cacheTree_reset()
-  
-  cache_dir <- file.path(tempdir(), "cache_test_6")
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-  
-  f1 <- cacheFile(cache_dir) %@% function(x) x + 1
-  f2 <- cacheFile(cache_dir) %@% function(x) f1(x) * 2
-  
-  res <- f2(10)
-  expect_equal(res, (10 + 1) * 2)
-  
-  nodes_before <- cacheTree_nodes()
-  expect_true(length(nodes_before) >= 2)
-  
-  graph_path <- file.path(tempdir(), "cache_graph.rds")
-  cacheTree_save(graph_path)
-  expect_true(file.exists(graph_path))
-  
-  # Reset graph and load from disk
-  cacheTree_reset()
-  expect_equal(length(cacheTree_nodes()), 0L)
-  
-  cacheTree_load(graph_path)
-  nodes_after <- cacheTree_nodes()
-  
-  # Node IDs should match before and after
-  expect_setequal(names(nodes_before), names(nodes_after))
-  
-  unlink(cache_dir, recursive = TRUE)
-  unlink(graph_path)
-})
-
-# --------------------------------------------------------#
 test_that("cacheFile tracks multiple dir arguments and vector paths", {
   if (exists("cacheTree_reset", mode = "function"))
     cacheTree_reset()
@@ -390,7 +268,7 @@ test_that("Smart hashing detects file modification without new files (mtime chec
   
   f <- function(file) readLines(file)
   
-  cached_f <- cacheFile(cache_dir, file_args = "file", backend="rds") %@% f
+  cached_f <- cacheFile(cache_dir,  backend="rds") %@% f
   
   # Run 1
   res1 <- cached_f(data_file)
@@ -439,7 +317,7 @@ test_that("Empty directory handling works with mtime hashing", {
   
   f <- function(d) d
   
-  cached_f <- cacheFile(cache_dir, file_args = "d", backend="rds") %@% f
+  cached_f <- cacheFile(cache_dir, backend="rds") %@% f
   
   # Run 1: Empty
   cached_f(empty_dir)

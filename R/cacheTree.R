@@ -127,73 +127,6 @@ cacheTree_load <- function(path) {
 
 # ---------------- file hashing (metadata + probabilistic) -----------------
 
-.file_state_cache <- new.env(parent = emptyenv())
-
-# ------------------------------------------------------------ #
-probabilistic_file_hash <- function(path, block_size = 64 * 1024, n_blocks = 5, algo = "xxhash64") {
-  if (!file.exists(path)) return(NA_character_)
-
-  size <- file.info(path)$size
-  con  <- file(path, "rb")
-  on.exit(close(con), add = TRUE)
-
-  blocks <- list()
-  # First block (Header is usually important)
-  blocks[[1]] <- readBin(con, "raw", block_size)
-
-  if (size > block_size) {
-    max_offset <- max(size - block_size, 1)
-    
-    # --- CRITICAL FIX START ---
-    # Ensure deterministic sampling based on file size + path
-    # We scramble the size/path to get a seed
-    seed_val <- as.integer(charToRaw(paste0(path, size))) 
-    set.seed(sum(seed_val)) 
-    # --- CRITICAL FIX END ---
-    
-    for (i in seq_len(n_blocks)) {
-      offset <- sample.int(max_offset, 1)
-      seek(con, offset, "start")
-      blocks[[length(blocks) + 1L]] <- readBin(con, "raw", block_size)
-    }
-  }
-
-  # Last block (Footer is usually important)
-  if (size > block_size) {
-    seek(con, max(size - block_size, 0), "start")
-    blocks[[length(blocks) + 1L]] <- readBin(con, "raw", block_size)
-  }
-
-  bytes <- do.call(c, blocks)
-  digest::digest(bytes, algo = algo)
-}
-
-fast_file_hash <- function(
-    path,
-    block_size = 64 * 1024,
-    n_blocks   = 5,
-    algo       = "xxhash64"
-) {
-  info <- file.info(path)
-  if (is.na(info$size)) return(NA_character_)
-
-  fp <- paste(info$size, unclass(info$mtime), sep = "|")
-
-  prev <- .file_state_cache[[path]]
-  if (!is.null(prev) && identical(prev$fp, fp)) {
-    return(prev$hash)
-  }
-
-  h <- probabilistic_file_hash(
-    path,
-    block_size = block_size,
-    n_blocks   = n_blocks,
-    algo       = algo
-  )
-
-  .file_state_cache[[path]] <- list(fp = fp, hash = h)
-  h
-}
 
 # ------------------------------------------------------------ #
 track_file <- function(path) {
@@ -214,7 +147,7 @@ track_file <- function(path) {
   if (is.null(fh)) fh <- character()
 
   if (file.exists(path)) {
-    fh[np] <- fast_file_hash(path)
+    fh[np] <- .fast_file_hash(path)
   } else {
     fh[np] <- NA_character_
   }
@@ -296,3 +229,98 @@ cachePrune <- function(cache_dir, days_old = 30) {
     unlink(to_delete)
   }
 }
+
+
+#--- Internal Helper: Normalize Path with Forward Slashes ---
+.norm_path <- function(path) {
+  normalizePath(path, winslash = "/", mustWork = FALSE)
+}
+
+# --- Cache Info & List Utilities ------------------------------------------
+
+#' Retrieve metadata from a cached file
+#' 
+#' @param path Path to the .rds file
+#' @return A list containing $value and $meta
+#' @export
+cacheInfo <- function(path) {
+  if (!file.exists(path)) stop("File not found: ", path)
+  
+  obj <- readRDS(path)
+  
+  # Check if it matches the new metadata structure
+  is_new_format <- is.list(obj) && 
+                   all(c("value", "meta") %in% names(obj)) && 
+                   is.list(obj$meta)
+  
+  if (is_new_format) {
+    return(obj)
+  } else {
+    # Legacy handling: wrap raw value in structure
+    return(list(
+      value = obj,
+      meta = list(
+        fname       = NA_character_,
+        args        = list(),
+        args_hash   = NA_character_,
+        cache_file  = .norm_path(path),
+        cache_dir   = .norm_path(dirname(path)),
+        created     = file.info(path)$mtime,
+        legacy      = TRUE
+      )
+    ))
+  }
+}
+
+#' List contents of a cache directory
+#'
+#' @param cache_dir Directory to scan
+#' @return A data.frame of cache files and metadata
+#' @export
+cacheList <- function(cache_dir) {
+  if (!dir.exists(cache_dir)) {
+    return(data.frame(
+      file = character(), 
+      fname = character(), 
+      created = as.POSIXct(character()), 
+      size_bytes = numeric(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  files <- list.files(cache_dir, full.names = TRUE, pattern = "\\.rds$")
+  
+  if (length(files) == 0) {
+    return(data.frame(
+      file = character(), 
+      fname = character(), 
+      created = as.POSIXct(character()), 
+      size_bytes = numeric(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  
+  # Extract info from each file
+  rows <- lapply(files, function(f) {
+    info <- tryCatch(cacheInfo(f), error = function(e) NULL)
+    file_stat <- file.info(f)
+    
+    if (is.null(info)) {
+      fname <- NA_character_
+    } else {
+      fname <- if (!is.null(info$meta$fname)) info$meta$fname else NA_character_
+    }
+    
+    data.frame(
+      file       = basename(f),
+      fname      = fname,
+      created    = file_stat$mtime,
+      size_bytes = file_stat$size,
+      stringsAsFactors = FALSE
+    )
+  })
+  
+  do.call(rbind, rows)
+}
+
+`%||%` <- function(a, b) if (!is.null(a)) a else b

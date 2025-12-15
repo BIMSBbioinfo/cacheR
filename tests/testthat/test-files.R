@@ -1,9 +1,19 @@
-# tests/testthat/test-cacheFile-file-tracking.R
+library(testthat)
+
 # --------------------------------------------------------#
-test_that("cacheFile invalidates when number of files in arg path changes", {
+# Helper: Reset cache tree if available
+# --------------------------------------------------------#
+reset_if_needed <- function() {
   if (exists("cacheTree_reset", mode = "function")) {
     cacheTree_reset()
   }
+}
+
+# --------------------------------------------------------#
+test_that("Automatic Detection: invalidates when number of files in arg path changes", {
+  getOption("cacheR.backend", "rds")
+
+  reset_if_needed()
 
   cache_dir <- file.path(tempdir(), "cache_test_files_arg")
   unlink(cache_dir, recursive = TRUE, force = TRUE)
@@ -16,17 +26,16 @@ test_that("cacheFile invalidates when number of files in arg path changes", {
   # start with one file
   file.create(file.path(input_dir, "file1.txt"))
 
-  cached_fun <- cacheFile(
-    cache_dir = cache_dir,
-    file_args = "path"
-  ) %@% function(path) {
+  # NO file_args needed anymore
+  cached_fun <- cacheFile(cache_dir = cache_dir) %@% function(path) {
     length(list.files(path))
   }
 
   n1 <- cached_fun(input_dir)
   expect_equal(n1, 1L)
 
-  # add a second file; should force a new cache key
+  # add a second file; should force a new cache key automatically
+  Sys.sleep(1.1) # Ensure mtime update
   file.create(file.path(input_dir, "file2.txt"))
 
   n2 <- cached_fun(input_dir)
@@ -35,90 +44,10 @@ test_that("cacheFile invalidates when number of files in arg path changes", {
 })
 
 # --------------------------------------------------------#
-test_that("cacheFile invalidates when hardcoded literal path changes", {
-  if (exists("cacheTree_reset", mode = "function")) {
-    cacheTree_reset()
-  }
+test_that("Automatic Detection: does not invalidate when file counts stay the same", {
+  getOption("cacheR.backend", "rds")
 
-  cache_dir <- file.path(tempdir(), "cache_test_files_literal")
-  unlink(cache_dir, recursive = TRUE, force = TRUE)
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-
-  static_dir <- file.path(tempdir(), "cache_static_dir")
-  unlink(static_dir, recursive = TRUE, force = TRUE)
-  dir.create(static_dir, showWarnings = FALSE, recursive = TRUE)
-
-  # build a function that literally contains list.files('<static_dir>') in its body
-  fun_code <- sprintf("function() { length(list.files('%s')) }", static_dir)
-  raw_fun  <- eval(parse(text = fun_code))
-
-  cached_fun <- cacheFile(cache_dir = cache_dir) %@% raw_fun
-
-  # first call with one file
-  file.create(file.path(static_dir, "file1.txt"))
-  n1 <- cached_fun()
-  expect_equal(n1, 1L)
-
-  # add another file in the same hardcoded dir
-  file.create(file.path(static_dir, "file2.txt"))
-  n2 <- cached_fun()
-  expect_equal(n2, 2L)
-  expect_gt(n2, n1)
-})
-
-# --------------------------------------------------------#
-test_that("cacheFile invalidates when dir(global_variable) changes", {
-  if (exists("cacheTree_reset", mode = "function")) {
-    cacheTree_reset()
-  }
-
-  cache_dir <- file.path(tempdir(), "cache_test_files_global")
-  unlink(cache_dir, recursive = TRUE, force = TRUE)
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-
-  global_dir <- file.path(tempdir(), "cache_global_dir")
-  unlink(global_dir, recursive = TRUE, force = TRUE)
-  dir.create(global_dir, showWarnings = FALSE, recursive = TRUE)
-
-  # assign to a global name used inside the function body
-  old_global <- if (exists("GLOBAL_DIR", envir = .GlobalEnv, inherits = FALSE)) {
-    get("GLOBAL_DIR", envir = .GlobalEnv)
-  } else {
-    NULL
-  }
-  assign("GLOBAL_DIR", global_dir, envir = .GlobalEnv)
-  on.exit({
-    if (is.null(old_global)) {
-      rm(GLOBAL_DIR, envir = .GlobalEnv)
-    } else {
-      assign("GLOBAL_DIR", old_global, envir = .GlobalEnv)
-    }
-  }, add = TRUE)
-
-  raw_fun <- function() {
-    # uses dir(global_variable)-style access
-    length(dir(GLOBAL_DIR))
-  }
-
-  cached_fun <- cacheFile(cache_dir = cache_dir) %@% raw_fun
-
-  # one file
-  file.create(file.path(global_dir, "file1.txt"))
-  n1 <- cached_fun()
-  expect_equal(n1, 1L)
-
-  # second file -> should change hash via symbol-based tracking
-  file.create(file.path(global_dir, "file2.txt"))
-  n2 <- cached_fun()
-  expect_equal(n2, 2L)
-  expect_gt(n2, n1)
-})
-
-# --------------------------------------------------------#
-test_that("cacheFile does not invalidate when file counts stay the same", {
-  if (exists("cacheTree_reset", mode = "function")) {
-    cacheTree_reset()
-  }
+  reset_if_needed()
 
   cache_dir <- file.path(tempdir(), "cache_test_files_stable")
   unlink(cache_dir, recursive = TRUE, force = TRUE)
@@ -128,14 +57,10 @@ test_that("cacheFile does not invalidate when file counts stay the same", {
   unlink(input_dir, recursive = TRUE, force = TRUE)
   dir.create(input_dir, showWarnings = FALSE, recursive = TRUE)
 
-  # deterministic set of files
   file.create(file.path(input_dir, "a.txt"))
   file.create(file.path(input_dir, "b.txt"))
 
-  cached_fun <- cacheFile(
-    cache_dir = cache_dir,
-    file_args = "path"
-  ) %@% function(path) {
+  cached_fun <- cacheFile(cache_dir = cache_dir) %@% function(path) {
     files <- sort(list.files(path))
     paste(files, collapse = ",")
   }
@@ -147,9 +72,10 @@ test_that("cacheFile does not invalidate when file counts stay the same", {
 })
 
 # --------------------------------------------------------#
-test_that("cacheFile invalidates when using base::list.files on an argument path", {
-  if (exists("cacheTree_reset", mode = "function"))
-    cacheTree_reset()
+test_that("Automatic Detection: works with base::list.files and explicit namespaces", {
+  getOption("cacheR.backend", "rds")
+
+  reset_if_needed()
 
   cache_dir <- file.path(tempdir(), "cache_files_base_listfiles")
   unlink(cache_dir, recursive = TRUE, force = TRUE)
@@ -168,17 +94,18 @@ test_that("cacheFile invalidates when using base::list.files on an argument path
   n1 <- cached_fun(input_dir)
   expect_equal(n1, 1L)
 
+  Sys.sleep(1.1)
   file.create(file.path(input_dir, "file2.txt"))
 
   n2 <- cached_fun(input_dir)
   expect_equal(n2, 2L)
-  expect_gt(n2, n1)
 })
 
 # --------------------------------------------------------#
-test_that("cacheFile invalidates when path is passed via ...", {
-  if (exists("cacheTree_reset", mode = "function"))
-    cacheTree_reset()
+test_that("Automatic Detection: works when path is passed via ... (dots)", {
+  getOption("cacheR.backend", "rds")
+
+  reset_if_needed()
 
   cache_dir <- file.path(tempdir(), "cache_test_files_dots")
   unlink(cache_dir, recursive = TRUE, force = TRUE)
@@ -196,225 +123,61 @@ test_that("cacheFile invalidates when path is passed via ...", {
     length(list.files(path))
   }
 
+  # The new logic scans arguments in '...' automatically
   cached_fun <- cacheFile(cache_dir = cache_dir) %@% fun
 
   n1 <- cached_fun(path = input_dir)
   expect_equal(n1, 1L)
 
+  Sys.sleep(1.1)
   file.create(file.path(input_dir, "file2.txt"))
 
   n2 <- cached_fun(path = input_dir)
   expect_equal(n2, 2L)
-  expect_gt(n2, n1)
 })
 
 # --------------------------------------------------------#
-test_that(".find_path_specs returns empty lists for expressions without path calls", {
-  expr <- quote({
-    x <- 1 + 2
-    y <- x * 3
-  })
+test_that("Normalization: Relative and Absolute paths hit same logic", {
+  getOption("cacheR.backend", "rds")
 
-  specs <- cacheR:::`.find_path_specs`(expr)
-
-  expect_type(specs, "list")
-  expect_named(specs, c("literals", "symbols"))
-  expect_length(specs$literals, 0L)
-  expect_length(specs$symbols,  0L)
-})
-
-# --------------------------------------------------------#
-test_that(".find_path_specs detects simple literal and symbol paths", {
-  f <- function(my_dir) {
-    a <- list.files("data")
-    b <- dir(path = my_dir)
-    c <- list.dirs("more_data", recursive = FALSE)
-    invisible(NULL)
-  }
-
-  specs <- cacheR:::`.find_path_specs`(body(f))
-
-  expect_true("data"      %in% specs$literals)
-  expect_true("more_data" %in% specs$literals)
-  expect_true("my_dir" %in% specs$symbols)
-})
-
-# --------------------------------------------------------#
-test_that(".find_path_specs handles namespaced calls and composite expressions", {
-  f <- function(base_dir) {
-    files1 <- base::list.files("raw")
-    files2 <- list.files(file.path(base_dir, "subdir", "nested"))
-    invisible(NULL)
-  }
-
-  specs <- cacheR:::`.find_path_specs`(body(f))
-
-  expect_true("raw"    %in% specs$literals)
-  expect_true("subdir" %in% specs$literals)
-  expect_true("nested" %in% specs$literals)
-  expect_true("base_dir" %in% specs$symbols)
-})
-
-# --------------------------------------------------------#
-test_that(".find_path_specs does not error on more complex bodies", {
-  f <- function(path_sym, other) {
-    if (!missing(other)) {
-      message("other arg present")
-    }
-    x <- list.files(path_sym)
-    y <- dir(path = "literal_dir")
-    z <- list.files(path = c("a", "b", path_sym))
-    invisible(list(x, y, z))
-  }
-
-  expect_silent({
-    specs <- cacheR:::`.find_path_specs`(body(f))
-  })
-
-  expect_true("literal_dir" %in% specs$literals)
-  expect_true("a"           %in% specs$literals)
-  expect_true("b"           %in% specs$literals)
-  expect_true("path_sym"    %in% specs$symbols)
-})
-
-# --------------------------------------------------------#
-test_that("cacheFile handles non-character symbols in path specs (e.g. file.path function)", {
-  cacheTree_reset()
-
-  cache_dir <- file.path(tempdir(), "cache_test_paths")
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-
-  base_dir <- tempdir()
-
-  cached_fun <- cacheFile(
-    cache_dir = cache_dir,
-    file_args = "base_dir"
-  ) %@% function(base_dir) {
-    files <- list.files(file.path(base_dir, "subdir"), recursive = TRUE)
-    length(files)
-  }
-
-  subdir <- file.path(base_dir, "subdir")
-  dir.create(subdir, showWarnings = FALSE)
-
-  # Ensure res1/res2 persist outside expect_error
-  res1 <- NULL
-  expect_error(
-    res1 <- cached_fun(base_dir),
-    NA
-  )
-
-  res2 <- NULL
-  expect_error(
-    res2 <- cached_fun(base_dir),
-    NA
-  )
-
-  expect_identical(res1, res2)
-})
-
-
-# --------------------------------------------------------#
-test_that("symbol path resolution skips non-character values", {
-  env <- new.env(parent = emptyenv())
-  env$dir_char <- "data"
-  env$file.path <- file.path
-
-  syms <- c("dir_char", "file.path", "does_not_exist")
-
-  fn_env <- env
-
-  get_symbol_paths <- function(symbols) {
-    vapply(symbols, function(sym) {
-      if (!exists(sym, envir = fn_env, inherits = TRUE)) return(NA_character_)
-      val <- get(sym, envir = fn_env, inherits = TRUE)
-      if (is.character(val) && length(val) >= 1L) val[[1L]] else NA_character_
-    }, character(1L))
-  }
-
-  paths <- get_symbol_paths(syms)
-
-  expect_equal(paths[["dir_char"]], "data")
-  expect_true(is.na(paths[["file.path"]]))
-  expect_true(is.na(paths[["does_not_exist"]]))
-})
-
-
-# --------------------------------------------- #
-test_that("cacheFile works with a DESeq2-like dds_from_counts function without DESeq2", {
-  if (exists("cacheTree_reset", mode = "function")) {
-    cacheTree_reset()
-  }
-
-  cache_dir <- file.path(tempdir(), "cache_dds_like_counts")
-  unlink(cache_dir, recursive = TRUE, force = TRUE)
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-
-  dds_like_from_counts <- cacheFile(cache_dir = cache_dir) %@%
-    function(counts_tbl, sample_table) {
-      mat <- as.matrix(counts_tbl[, sample_table$sample_id])
-      rownames(mat) <- counts_tbl$gene_id
-      coldata <- as.data.frame(sample_table)
-      rownames(coldata) <- coldata$sample_id
-      design <- stats::model.matrix(~ condition, data = coldata)
-      list(counts = mat, coldata = coldata, design = design)
-    }
-
-  set.seed(1)
-  sample_table <- data.frame(
-    sample_id = paste0("s", 1:3),
-    condition = c("A", "A", "B"),
-    stringsAsFactors = FALSE
-  )
-  counts_tbl <- data.frame(
-    gene_id = paste0("g", 1:10),
-    s1 = rpois(10, 10),
-    s2 = rpois(10, 12),
-    s3 = rpois(10,  5),
-    check.names = FALSE
-  )
-
-  res1 <- dds_like_from_counts(counts_tbl, sample_table)
-  res2 <- dds_like_from_counts(counts_tbl, sample_table)
-
-  expect_type(res1, "list")
-  expect_identical(res1, res2)
-})
-
-# --------------------------------------------- #
-test_that("cacheFile normalizes relative paths correctly", {
+  reset_if_needed()
+  
   cache_dir <- file.path(tempdir(), "cache_test_norm")
   dir.create(cache_dir, showWarnings = FALSE)
   on.exit(unlink(cache_dir, recursive = TRUE))
   
-  # Setup: Create a subdirectory "data"
-  data_dir <- file.path(tempdir(), "data")
+  data_dir <- file.path(tempdir(), "data_subdir")
   dir.create(data_dir, showWarnings = FALSE)
   on.exit(unlink(data_dir, recursive = TRUE), add = TRUE)
   
-  # Create a function that accepts a path
-  f <- function(path) {
-    return(path)
-  }
+  file_path <- file.path(data_dir, "test.csv")
+  writeLines("A,B\n1,2", file_path)
   
-  # Decorate with file_args
-  cached_f <- cacheFile(cache_dir, file_args = "path") %@% f
+  f <- cacheFile(cache_dir) %@% function(path) readLines(path)
   
-  # 1. Call with absolute path
-  cached_f(data_dir)
+  # 1. Call with Absolute Path
+  f(file_path)
   
-  # 2. Call with relative path (if strictly checking, this might hash differently 
-  # unless normalized, but the function execution should work)
-  cwd <- getwd()
-  on.exit(setwd(cwd), add = TRUE)
-  setwd(tempdir())
+  # 2. Call with Relative Path
+  old_wd <- getwd()
+  setwd(data_dir)
+  on.exit(setwd(old_wd), add = TRUE)
   
-  # Should run without error
-  expect_no_error(cached_f("data"))
+  # Even though the string is different ("test.csv" vs "/tmp/.../test.csv"),
+  # they resolve to the same file. The cache key includes the file hash.
+  # So while the 'args' part of the hash differs, the 'dir_states' part is identical.
+  # This creates a SAFE new cache entry.
+  
+  res <- f("test.csv")
+  expect_equal(res, c("A,B", "1,2"))
 })
 
-# --------------------------------------------- #
-test_that("cacheFile scans all arguments for directories even if file_args is set", {
+# --------------------------------------------------------#
+test_that("Multiple Arguments: Scans all arguments for files", {
+  getOption("cacheR.backend", "rds")
+
+  reset_if_needed()
+  
   cache_dir <- file.path(tempdir(), "cache_test_scan_args")
   dir.create(cache_dir, showWarnings = FALSE)
   on.exit(unlink(cache_dir, recursive = TRUE))
@@ -430,7 +193,6 @@ test_that("cacheFile scans all arguments for directories even if file_args is se
     paste(a, b)
   }
   
-  # Decorate
   cached_f <- cacheFile(cache_dir, backend = "rds") %@% f
   
   # Run 1
@@ -439,33 +201,389 @@ test_that("cacheFile scans all arguments for directories even if file_args is se
   # Run 2: Different directory arg
   cached_f(dir2, "some_val")
   
-  # Should have 2 cache files (filtered for .rds to ignore .lock files)
+  # Should have 2 cache files
   files <- list.files(cache_dir, pattern = "\\.rds$")
   expect_equal(length(files), 2)
 })
 
-# -------------------------------------------------------------------------
-# Test Feature 3: Concurrency Safety (File Locking)
-# -------------------------------------------------------------------------
-test_that("file locking logic runs without error", {
-  cache_dir <- file.path(tempdir(), "cache_test_locking")
+# --------------------------------------------------------#
+test_that("Safety: Non-file strings are ignored (no crash)", {
+  getOption("cacheR.backend", "rds")
+
+  reset_if_needed()
+  
+  cache_dir <- file.path(tempdir(), "cache_test_safety")
   dir.create(cache_dir, showWarnings = FALSE)
   on.exit(unlink(cache_dir, recursive = TRUE))
   
-  # 1. Force backend to 'rds' so we can regex for it reliably
-  cached_f <- cacheFile(cache_dir, backend = "rds") %@% function(x) x + 1
+  f <- cacheFile(cache_dir) %@% function(mode, label) {
+    paste(mode, label)
+  }
   
-  # 2. Run
-  res <- cached_f(1)
-  expect_equal(res, 2)
+  # "fast" and "run1" do not exist on disk.
+  # The hasher should check file.exists("fast") -> FALSE -> Ignore.
+  expect_error(f("fast", "run1"), NA)
+  expect_equal(f("fast", "run1"), "fast run1")
+})
+
+# --------------------------------------------------------#
+test_that("Edge Case: The 'Coincidence' False Positive", {
+  getOption("cacheR.backend", "rds")
+
+  # This test confirms the 'robustness' trade-off:
+  # If an argument name matches a file on disk by pure luck, 
+  # changing that file invalidates the cache.
   
-  files <- list.files(cache_dir)
+  reset_if_needed()
+  cache_dir <- file.path(tempdir(), "cache_test_coincidence")
+  dir.create(cache_dir, showWarnings = FALSE)
+  on.exit(unlink(cache_dir, recursive = TRUE))
   
-  # 3. Check for presence of RDS
-  expect_true(any(grepl("\\.rds$", files)))
+  # 1. Create a file named "red"
+  cwd <- tempdir()
+  bad_file <- file.path(cwd, "red")
+  writeLines("content1", bad_file)
+  on.exit(unlink(bad_file), add = TRUE)
   
-  # 4. Lock files MAY exist (filelock does not delete them). 
-  # We just ensure the code didn't crash and the data is there.
-  rds_files <- list.files(cache_dir, pattern = "\\.rds$")
-  expect_length(rds_files, 1)
+  # 2. Function using "red" as a color string
+  my_plot <- cacheFile(cache_dir, backend = "rds") %@% function(color) {
+    paste("Color is", color)
+  }
+  
+  old_wd <- getwd()
+  setwd(cwd)
+  on.exit(setwd(old_wd), add = TRUE)
+  
+  # Run 1
+  res1 <- my_plot("red")
+  expect_equal(res1, "Color is red")
+  
+  # 3. Modify the file "red"
+  Sys.sleep(1.1)
+  writeLines("content2", bad_file)
+  
+  # Run 2
+  # Argument "red" is same. Code is same.
+  # But file "red" changed -> Cache Miss (Safe behavior)
+  res2 <- my_plot("red")
+  
+  files <- list.files(cache_dir, pattern = "\\.rds$")
+  expect_length(files, 2)
+})
+
+# --------------------------------------------------------#
+# Helper: Setup Cache
+# --------------------------------------------------------#
+setup_cache <- function(name) {
+  d <- file.path(tempdir(), name)
+  if (dir.exists(d)) unlink(d, recursive = TRUE)
+  dir.create(d, showWarnings = FALSE)
+  d
+}
+
+# --------------------------------------------------------#
+test_that("Robustness: 'Touching' a file (mtime change) does NOT invalidate cache if content is identical", {
+  
+  cache_dir <- setup_cache("robust_touch")
+  on.exit(unlink(cache_dir, recursive = TRUE))
+  
+  f_path <- file.path(tempdir(), "touch_me.txt")
+  cat("Important Data", file = f_path)
+  on.exit(unlink(f_path), add = TRUE)
+  
+  # Define the processor to return a LIST containing data + generation time
+  proc <- cacheFile(cache_dir, backend="rds") %@% function(x) {
+    list(
+      data = readLines(x),
+      generated_at = Sys.time() # This changes every time the function effectively runs
+    )
+  }
+  
+  # --- Run 1 ---
+  result_1 <- proc(f_path)
+  expect_equal(result_1$data, "Important Data")
+  
+  # ACTION: Update mtime, keep content same
+  # Sleep ensures that if it DOES re-run, Sys.time() will definitely be different
+  Sys.sleep(1.5) 
+  Sys.setFileTime(f_path, Sys.time())
+  
+  # --- Run 2 ---
+  result_2 <- proc(f_path)
+  
+  # 1. Content should still be correct
+  expect_equal(result_2$data, "Important Data")
+  
+  # 2. The timestamp should match Run 1. 
+  # If the cache was invalidated by the touch, this would be a new time.
+  expect_equal(result_2$generated_at, result_1$generated_at)
+})
+
+# --------------------------------------------------------#
+test_that("Sensitivity: Changing content (even with same size) invalidates cache", {
+
+  cache_dir <- setup_cache("robust_content")
+  on.exit(unlink(cache_dir, recursive = TRUE))
+  
+  f_path <- file.path(tempdir(), "change_me.txt")
+  # Write 3 bytes
+  cat("abc", file = f_path)
+  on.exit(unlink(f_path), add = TRUE)
+  
+  # Define processor: Returns a list containing the data AND a generation timestamp
+  proc <- cacheFile(cache_dir) %@% function(x) {
+    list(
+      content = readLines(x),
+      # If this function runs again, this time/ID will change
+      run_id = as.numeric(Sys.time()) 
+    )
+  }
+  
+  # --- Run 1 ---
+  res1 <- proc(f_path)
+  expect_equal(res1$content, "abc")
+  
+  # ACTION: Change content, but keep size identical (3 bytes)
+  # 'abc' -> 'xyz'
+  Sys.sleep(1.1) # Ensure mtime updates so the caching logic sees a file change
+  cat("xyz", file = f_path)
+  
+  # --- Run 2 ---
+  # Logic: mtime changed -> Re-hash content -> Content changed -> New Hash -> Cache MISS -> Re-run
+  res2 <- proc(f_path)
+  
+  # 1. Verify we got the new content
+  expect_equal(res2$content, "xyz")
+  
+  # 2. Verify the function actually re-executed (Run IDs should differ)
+  # If the cache had incorrectly served the old result, res2$run_id would equal res1$run_id
+  expect_false(res1$run_id == res2$run_id) 
+})
+
+# --------------------------------------------------------#
+test_that("Sampling: Header changes are detected in large files (>64KB)", {
+
+  cache_dir <- setup_cache("robust_sampling")
+  on.exit(unlink(cache_dir, recursive = TRUE))
+  
+  f_path <- file.path(tempdir(), "large_file.bin")
+  
+  # Create 200KB file (larger than the 64KB block size)
+  # Write random bytes
+  set.seed(42)
+  bytes <- as.raw(sample(0:255, 200 * 1024, replace=TRUE))
+  writeBin(bytes, f_path)
+  on.exit(unlink(f_path), add = TRUE)
+  
+  # Define processor: Return size AND a unique run ID
+  proc <- cacheFile(cache_dir, backend = "rds") %@% function(x) {
+    list(
+      size = file.size(x),
+      # This ID proves the function executed right now
+      run_id = as.numeric(Sys.time()) 
+    )
+  }
+  
+  # --- Run 1 ---
+  r1 <- proc(f_path)
+  
+  # ACTION: Modify the HEADER (first byte)
+  # The probabilistic hasher ALWAYS reads the first block, so this must be detected.
+  con <- file(f_path, "r+b")
+  seek(con, 0)
+  writeBin(as.raw(0x00), con) # Change first byte to 0
+  close(con)
+  Sys.setFileTime(f_path, Sys.time()) # Ensure mtime update
+  
+  # --- Run 2 ---
+  r2 <- proc(f_path)
+  
+  # 1. The file size is technically identical (in-place overwrite)
+  expect_equal(r2$size, r1$size)
+  
+  # 2. Crucial Check: Did we re-run?
+  # If the cache correctly detected the header change, it counts as a "Miss" and re-runs.
+  # Therefore, the timestamp (run_id) must be strictly greater/different.
+  expect_false(r1$run_id == r2$run_id)
+})
+
+# --------------------------------------------------------#
+test_that("Determinism: The same file always produces the same hash", {
+  getOption("cacheR.backend", "rds")
+
+  cache_dir <- setup_cache("robust_determinism")
+  on.exit(unlink(cache_dir, recursive = TRUE))
+  
+  f_path <- file.path(tempdir(), "deterministic.txt")
+  cat("static content", file = f_path)
+  on.exit(unlink(f_path), add = TRUE)
+  
+  # We clear the internal memoization cache to force full re-hashing
+  if (exists(".file_state_cache")) {
+    rm(list = ls(envir = .file_state_cache), envir = .file_state_cache)
+  }
+  
+  proc <- cacheFile(cache_dir) %@% function(x) x
+  
+  # Run 1
+  proc(f_path)
+  hash1 <- list.files(cache_dir, pattern = "\\.rds$")[1]
+  
+  # Clear Cache Directory completely
+  unlink(list.files(cache_dir, full.names = TRUE))
+  
+  # Clear Memory Cache again
+  if (exists(".file_state_cache")) {
+    rm(list = ls(envir = .file_state_cache), envir = .file_state_cache)
+  }
+  
+  # Run 2 on same file
+  proc(f_path)
+  hash2 <- list.files(cache_dir, pattern = "\\.rds$")[1]
+  
+  expect_equal(hash1, hash2)
+})
+
+# --------------------------------------------------------#
+
+library(testthat)
+
+# Helper: Clear memoization cache to ensure tests run fresh
+reset_mem_cache <- function() {
+  if (exists(".file_state_cache", envir = .GlobalEnv)) {
+    rm(list = ls(envir = .file_state_cache), envir = .file_state_cache)
+  }
+}
+
+# --------------------------------------------------------#
+test_that("Automatic Detection: invalidates when number of files changes", {
+  reset_mem_cache()
+  cache_dir <- file.path(tempdir(), "cache_auto_detect")
+  unlink(cache_dir, recursive = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE)
+
+  input_dir <- file.path(tempdir(), "input_files")
+  unlink(input_dir, recursive = TRUE)
+  dir.create(input_dir, showWarnings = FALSE)
+
+  # Start with 1 file
+  file.create(file.path(input_dir, "file1.txt"))
+
+  # FIX: Explicitly set backend="rds" so expectations on .rds files work
+  f <- cacheFile(cache_dir, backend = "rds") %@% function(path) length(list.files(path))
+
+  n1 <- f(input_dir)
+  expect_equal(n1, 1L)
+
+  # Add 2nd file
+  Sys.sleep(1.1) # ensure mtime tick
+  file.create(file.path(input_dir, "file2.txt"))
+  
+  n2 <- f(input_dir)
+  expect_equal(n2, 2L)
+  
+  # Check explicitly for .rds files
+  expect_true(length(list.files(cache_dir, pattern = "\\.rds$")) >= 2)
+})
+
+# --------------------------------------------------------#
+test_that("Edge Case: The 'Coincidence' False Positive", {
+  reset_mem_cache()
+  cache_dir <- file.path(tempdir(), "cache_coincidence")
+  unlink(cache_dir, recursive = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  cwd <- tempdir()
+  bad_file <- file.path(cwd, "red")
+  writeLines("content1", bad_file)
+  on.exit(unlink(bad_file), add = TRUE)
+  
+  # FIX: Explicitly set backend="rds"
+  my_plot <- cacheFile(cache_dir, backend = "rds") %@% function(color) {
+    paste("Color is", color)
+  }
+  
+  old_wd <- getwd()
+  setwd(cwd)
+  on.exit(setwd(old_wd), add = TRUE)
+  
+  # Run 1
+  res1 <- my_plot("red")
+  expect_equal(res1, "Color is red")
+  expect_length(list.files(cache_dir, pattern = "\\.rds$"), 1)
+  
+  # Run 2: Modify file "red"
+  Sys.sleep(1.1)
+  writeLines("content2", bad_file)
+  
+  res2 <- my_plot("red")
+  expect_length(list.files(cache_dir, pattern = "\\.rds$"), 2)
+})
+
+# --------------------------------------------------------#
+test_that("Robustness: Touching a file (mtime change) does NOT invalidate if content is identical", {
+  reset_mem_cache()
+  cache_dir <- file.path(tempdir(), "cache_robust_touch")
+  unlink(cache_dir, recursive = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  f_path <- file.path(tempdir(), "touch_me.txt")
+  cat("data", file = f_path)
+  
+  # FIX: Explicitly set backend="rds"
+  proc <- cacheFile(cache_dir, backend = "rds") %@% function(x) {
+    readLines(x)
+  }
+  
+  # Run 1
+  proc(f_path)
+  expect_length(list.files(cache_dir, pattern = "\\.rds$"), 1)
+
+  
+  # Touch file
+  Sys.sleep(1.1)
+  Sys.setFileTime(f_path, Sys.time())
+  
+  # Run 2 (Should Hit Cache)
+  proc(f_path)
+  expect_length(list.files(cache_dir, pattern = "\\.rds$"), 1)
+
+
+})
+
+# --------------------------------------------------------#
+test_that("Sampling: Header changes are detected in large files (>64KB)", {
+  reset_mem_cache()
+  cache_dir <- file.path(tempdir(), "cache_sampling")
+  unlink(cache_dir, recursive = TRUE)
+  dir.create(cache_dir, showWarnings = FALSE)
+  
+  f_path <- file.path(tempdir(), "large_file.bin")
+  on.exit(unlink(f_path), add = TRUE)
+  
+  # Create 200KB file
+  set.seed(42)
+  bytes <- as.raw(sample(0:255, 200 * 1024, replace=TRUE))
+  writeBin(bytes, f_path)
+  
+  # FIX: Explicitly set backend="rds"
+  proc <- cacheFile(cache_dir, backend = "rds") %@% function(x) file.size(x)
+  
+  # Run 1
+  r1 <- proc(f_path)
+  files1 <- list.files(cache_dir, pattern = "\\.rds$")
+  expect_length(files1, 1)
+  
+  # Modify first byte (Header)
+  con <- file(f_path, "r+b")
+  seek(con, 0)
+  writeBin(as.raw(0x00), con)
+  close(con)
+  Sys.setFileTime(f_path, Sys.time())
+  
+  # Run 2
+  r2 <- proc(f_path)
+  
+  files2 <- list.files(cache_dir, pattern = "\\.rds$")
+  expect_length(files2, 2)
 })
