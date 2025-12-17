@@ -29,7 +29,9 @@ Suggests:
     testthat (>= 3.0.0),
     knitr,
     rmarkdown,
-    callr
+    callr,
+    DBI,
+    RSQLite
 Config/testthat/edition: 3
 LazyData: true
 VignetteBuilder: knitr

@@ -101,38 +101,126 @@
   h
 }
 
-#' Scan AST for Package Dependencies
+#' Get Connection Path
+#' 
+#' Attempts to resolve a file path from a connection object.
+#' Supports base file connections and DBI SQLite connections.
+#' 
+#' @param x An object (potential connection).
+#' @return A character string (path) or NULL.
+#' @keywords internal
+.get_connection_path <- function(x) {
+  # 1. Base R file connections
+  if (inherits(x, "connection")) {
+    # summary(con)$description usually holds the filename for file() connections
+    try_desc <- try(summary(x)$description, silent = TRUE)
+    if (!inherits(try_desc, "try-error") && is.character(try_desc) && file.exists(try_desc)) {
+      return(try_desc)
+    }
+  }
+  
+  # 2. SQLite / DBI connections
+  # We check for "SQLiteConnection" without strictly requiring the library loaded,
+  # though we try to use DBI methods if available.
+  if (inherits(x, "SQLiteConnection")) {
+     # Try DBI::dbGetInfo
+     if (requireNamespace("DBI", quietly = TRUE)) {
+       info <- try(DBI::dbGetInfo(x), silent = TRUE)
+       if (!inherits(info, "try-error") && is.list(info) && "dbname" %in% names(info)) {
+         if (file.exists(info$dbname)) return(info$dbname)
+       }
+     }
+     # Fallback: RSQLite stores dbname in the slot (internal, but stable-ish)
+     if (isS4(x) && "dbname" %in% slotNames(x)) {
+        p <- slot(x, "dbname")
+        if (file.exists(p)) return(p)
+     }
+  }
+  
+  return(NULL)
+}
+
+#' Extract Paths Recursively
+#' 
+#' Deeply scans an object (lists, environments, args) to find character strings
+#' that represent existing files, or connections pointing to files.
+#' 
+#' @param x Any R object.
+#' @return Character vector of paths.
+#' @keywords internal
+.extract_paths_recursively <- function(x) {
+  paths <- character()
+  
+  if (is.character(x)) {
+    # Filter for valid files/dirs
+    valid <- x[file.exists(x) | dir.exists(x)]
+    if (length(valid) > 0) paths <- c(paths, valid)
+    
+  } else if (is.list(x)) {
+    # Recursively scan lists
+    for (el in x) {
+      paths <- c(paths, .extract_paths_recursively(el))
+    }
+    
+  } else if (inherits(x, "connection") || inherits(x, "DBIConnection")) {
+    # Check connections
+    p <- .get_connection_path(x)
+    if (!is.null(p)) paths <- c(paths, p)
+  }
+  
+  return(paths)
+}
+
+#' Scan AST for Dependencies (Packages and Options)
 #'
-#' Recursively scans a function's body (Abstract Syntax Tree) to find 
-#' calls in the form `pkg::fun` or `pkg:::fun`. This allows us to track
-#' versions of packages that are explicitly called but not loaded.
+#' Recursively scans a function's body (Abstract Syntax Tree) to find:
+#' 1. `pkg::fun` calls (Package dependencies).
+#' 2. `getOption("literal")` calls (Option dependencies).
 #'
 #' @param expr An R expression or function body.
-#' @return A character vector of unique package names found.
+#' @return A list with `pkgs` (character) and `opts` (character).
 #' @keywords internal
-.scan_ast_for_pkgs <- function(expr) {
+.scan_ast_deps <- function(expr) {
   pkgs <- character()
+  opts <- character()
   
   if (is.call(expr)) {
-    # Check if the call is `::` or `:::`
-    if (is.symbol(expr[[1]]) && (as.character(expr[[1]]) %in% c("::", ":::"))) {
-      # The second element is the package name (arg1 of the operator)
+    fn_sym <- expr[[1]]
+    
+    # 1. Detect pkg::fun or pkg:::fun
+    if (is.symbol(fn_sym) && (as.character(fn_sym) %in% c("::", ":::"))) {
       pkg_arg <- expr[[2]]
-      # Handle both quoted ("pkg") and unquoted (pkg) symbols
       pkg <- if (is.symbol(pkg_arg)) as.character(pkg_arg) else as.character(pkg_arg)
       pkgs <- c(pkgs, pkg)
     }
+    
+    # 2. Detect getOption("literal")
+    if (is.symbol(fn_sym) && as.character(fn_sym) == "getOption") {
+      # expr[[2]] is the option name
+      if (length(expr) >= 2 && (is.character(expr[[2]]) || is.character(try(eval(expr[[2]]), silent=TRUE)))) {
+         # We try to grab the literal string. If it's a variable, we might miss it (limitation)
+         val <- tryCatch(eval(expr[[2]]), error = function(e) NULL)
+         if (is.character(val)) opts <- c(opts, val)
+      }
+    }
+    
     # Recurse into all arguments of the call
     for (i in seq_along(expr)) {
-      pkgs <- c(pkgs, .scan_ast_for_pkgs(expr[[i]]))
+      res <- .scan_ast_deps(expr[[i]])
+      pkgs <- c(pkgs, res$pkgs)
+      opts <- c(opts, res$opts)
     }
+    
   } else if (is.expression(expr) || is.list(expr)) {
     # Recurse into lists or expression blocks
     for (i in seq_along(expr)) {
-      pkgs <- c(pkgs, .scan_ast_for_pkgs(expr[[i]]))
+      res <- .scan_ast_deps(expr[[i]])
+      pkgs <- c(pkgs, res$pkgs)
+      opts <- c(opts, res$opts)
     }
   }
-  return(unique(pkgs))
+  
+  return(list(pkgs = unique(pkgs), opts = unique(opts)))
 }
 
 #' Get Package Versions
@@ -194,7 +282,8 @@
 #' 2. The expressions passed to arguments (source code).
 #' 3. The evaluated values of arguments (runtime values).
 #' 4. The versions of packages explicitly called (e.g. `pkg::fun`).
-#' 5. The content of any files passed as string arguments.
+#' 5. The content of any files passed as string arguments (recursively).
+#' 6. Global options used by the function (detected via AST).
 #' 
 #' @param cache_dir Directory to store cache files. Defaults to a standard user cache dir.
 #' @param backend Serialization backend. "rds" (default) or "qs" (faster, requires qs package).
@@ -205,12 +294,12 @@
 #' 
 #' @return A new function that mimics the original but caches results to disk.
 #' @export
-cacheFile <- function(cache_dir    = NULL,
-                      backend      = getOption("cacheR.backend", "rds"),
-                      ignore_args  = NULL,
-                      file_pattern = NULL,
-                      env_vars     = NULL,
-                      algo         = "xxhash64") decorator %@% function(f) {
+cacheFile <- function(cache_dir     = NULL,
+                      backend       = getOption("cacheR.backend", "rds"),
+                      ignore_args   = NULL,
+                      file_pattern  = NULL,
+                      env_vars      = NULL,
+                      algo          = "xxhash64") decorator %@% function(f) {
   
   # Setup Cache Directory
   if (is.null(cache_dir)) cache_dir <- cacheR_default_dir()
@@ -222,8 +311,10 @@ cacheFile <- function(cache_dir    = NULL,
   backend   <- match.arg(backend, c("rds", "qs"))
   
   # 1. Static Analysis (One-time check)
-  # Scan AST for package dependencies like `pkg::fun`.
-  ast_pkgs <- .scan_ast_for_pkgs(body(f))
+  # Scan AST for package dependencies like `pkg::fun` AND `getOption` usage.
+  ast_deps <- .scan_ast_deps(body(f))
+  ast_pkgs <- ast_deps$pkgs
+  ast_opts <- ast_deps$opts
   
   # -----------------------------------------------------------------------
   # The Wrapper Function
@@ -245,29 +336,20 @@ cacheFile <- function(cache_dir    = NULL,
     # ---------------------------------------------------------- #
     
     # 1. Capture Expressions using match.call
-    #    This maps positional arguments (f(10)) to their formal names (f(a=10)).
     call_matched <- match.call(definition = f, expand.dots = TRUE)
     args_exprs   <- as.list(call_matched)[-1] # Remove function name
     
-    # 2. Capture Values by evaluating the matched expressions
-    #    This ensures args_values has Names matching the Formals.
-    #    Using list(...) directly would produce unnamed values for positional arguments.
+    # 2. Capture Values
     args_values <- lapply(args_exprs, function(expr) {
       eval(expr, envir = invoke_env)
     })
     
     # [NORMALIZATION STEP]
-    # We must ensure f(a=1) looks identical to f(a=1, b=default) in the hash.
-    # We loop through formals and fill in any missing arguments with their defaults.
     f_defs <- formals(f)
     f_defs <- f_defs[names(f_defs) != "..."]
     
-    # Create an evaluation environment initialized with the *named* explicit arguments.
-    # This allows complex defaults like `b = a * 2` to resolve correctly.
     eval_env <- new.env(parent = invoke_env)
     
-    # Only populate valid named arguments into eval_env to avoid list2env errors
-    # with unnamed lists (e.g. from ...)
     if (!is.null(names(args_values))) {
        named_indices <- nzchar(names(args_values))
        if (any(named_indices)) {
@@ -276,23 +358,14 @@ cacheFile <- function(cache_dir    = NULL,
     }
     
     for (nm in names(f_defs)) {
-      # If argument is missing from both Explicit Expressions and Explicit Values
       if (!nm %in% names(args_values)) {
         def_expr <- f_defs[[nm]]
-        
-        # Check if it is a "real" default (not an empty symbol representing missing arg)
         if (!is.symbol(def_expr) || as.character(def_expr) != "") {
-           
-           # A. Update Expression Hash (Capture the source code of default)
            if (!nm %in% names(args_exprs)) {
              args_exprs[[nm]] <- def_expr
            }
-           
-           # B. Update Value Hash (Evaluate the default)
            val <- tryCatch(eval(def_expr, envir = eval_env), error = function(e) NULL)
            args_values[[nm]] <- val
-           
-           # Add to env so subsequent defaults can refer to this one
            assign(nm, val, envir = eval_env)
         }
       }
@@ -305,7 +378,6 @@ cacheFile <- function(cache_dir    = NULL,
     }
     
     # 4. Sort for Determinism
-    #    Ensures f(a=1, b=2) hashes the same as f(b=2, a=1)
     if (length(args_exprs) > 0)  args_exprs  <- args_exprs[order(names(args_exprs))]
     if (length(args_values) > 0) args_values <- args_values[order(names(args_values))]
     
@@ -313,35 +385,40 @@ cacheFile <- function(cache_dir    = NULL,
     # B. Compute Hashes
     # ---------------------------------------------------------- #
     
-    # Compute Closure Hash INSIDE the wrapper.
-    # This captures the *current* state of global variables/environments.
+    # Compute Closure Hash
     closure_hash <- .get_recursive_closure_hash(f, algo = algo)
     
     local_path_hasher <- function(p) .get_path_hash(p, file_pattern = file_pattern, algo = algo)
     
-    # File Hashing: Scan evaluated string arguments for paths
+    # File Hashing: Recursively scan arguments for paths/connections
     dir_hashes <- character()
     if (length(args_values) > 0) {
-      hash_list <- list()
-      for (val in args_values) {
-        if (is.null(val) || !is.character(val) || length(val) == 0) next
-        paths <- normalizePath(val, mustWork = FALSE)
-        # Check if the string actually points to a file/dir on disk
-        valid_paths <- paths[file.exists(paths) | dir.exists(paths)]
-        if (length(valid_paths) == 0) next
-        
-        # Hash the content/structure of the file/dir
-        res <- vapply(unique(valid_paths), local_path_hasher, character(1L))
-        hash_list <- c(hash_list, list(res))
+      # Use helper to scan deeply into lists and check connections
+      paths <- .extract_paths_recursively(args_values)
+      # Normalize
+      paths <- normalizePath(paths, mustWork = FALSE)
+      valid_paths <- unique(paths[file.exists(paths) | dir.exists(paths)])
+      
+      if (length(valid_paths) > 0) {
+        dir_hashes <- vapply(valid_paths, local_path_hasher, character(1L))
+        dir_hashes <- dir_hashes[order(names(dir_hashes))]
       }
-      if (length(hash_list) > 0) dir_hashes <- unlist(hash_list)
-      if (length(dir_hashes) > 0) dir_hashes <- dir_hashes[order(names(dir_hashes))]
     }
     
     pkg_versions <- .get_pkg_versions(ast_pkgs)
     
+    # Environment Variables
     current_envs <- NULL
     if (!is.null(env_vars)) current_envs <- as.list(Sys.getenv(sort(env_vars), unset = NA))
+    
+    # Options (Detected via AST)
+    current_opts <- NULL
+    if (length(ast_opts) > 0) {
+      # Capture the current value of options used by the function
+      current_opts <- options()[ast_opts]
+      # Handle case where option is not set (NULL) to ensure consistency
+      current_opts <- current_opts[order(names(current_opts))]
+    }
     
     # ---------------------------------------------------------- #
     # C. Build Cache Key
@@ -351,6 +428,7 @@ cacheFile <- function(cache_dir    = NULL,
       pkgs        = pkg_versions,  # Package dependencies
       dir_states  = dir_hashes,    # File contents of arguments
       envs        = current_envs,  # Environment variables
+      opts        = current_opts,  # R Options detected in code
       args_exprs  = args_exprs,    # Source code of arguments
       args_values = args_values    # Runtime values of arguments
     )
@@ -359,7 +437,7 @@ cacheFile <- function(cache_dir    = NULL,
     outfile   <- file.path(cache_dir, paste(fname, args_hash, backend, sep = "."))
     
     # ---------------------------------------------------------- #
-    # D. Cache Tree Hooks (For External Visualization)
+    # D. Cache Tree Hooks (External Visualization)
     # ---------------------------------------------------------- #
     node_id <- paste(fname, args_hash, sep = ":")
     if (exists(".cacheTree_register_node", mode = "function")) {
@@ -387,11 +465,9 @@ cacheFile <- function(cache_dir    = NULL,
       cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
       
       if (!is.null(cached_obj)) {
-        # Check for New Format: list(value = ..., meta = ...)
         if (is.list(cached_obj) && "value" %in% names(cached_obj) && "meta" %in% names(cached_obj)) {
           return(cached_obj$value)
         }
-        # Check for Legacy Format
         if (is.list(cached_obj) && "dat" %in% names(cached_obj)) {
           return(cached_obj$dat)
         }
@@ -404,7 +480,6 @@ cacheFile <- function(cache_dir    = NULL,
     # ---------------------------------------------------------- #
     dat <- f(...)
     
-    # Construct Full Metadata for provenance
     full_meta <- c(hashlist, list(
        fname      = fname,
        args_hash  = args_hash,
@@ -417,13 +492,11 @@ cacheFile <- function(cache_dir    = NULL,
     
     do_save <- function() .atomic_save(save_data, outfile, backend)
 
-    # Use file locking to prevent race conditions (e.g., parallel workers)
     if (requireNamespace("filelock", quietly = TRUE)) {
       lockfile <- paste0(outfile, ".lock")
       lock <- tryCatch(filelock::lock(lockfile, timeout = 5000), error = function(e) NULL)
       if (!is.null(lock)) {
         on.exit(filelock::unlock(lock), add = TRUE)
-        # Optimistic Locking: Check if someone else cached it while we were computing
         if (.load && file.exists(outfile)) {
            cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
            if (!is.null(cached_obj)) {
@@ -447,8 +520,7 @@ cacheFile <- function(cache_dir    = NULL,
 #' Atomic Save
 #' 
 #' Saves an object to a temporary file first, then renames it to the target
-#' path. This ensures that the cache file is never in a half-written state
-#' if the R process crashes or is killed during the write.
+#' path. This ensures that the cache file is never in a half-written state.
 #'
 #' @param object The R object to save.
 #' @param path Target file path.
@@ -463,12 +535,10 @@ cacheFile <- function(cache_dir    = NULL,
     } else {
       saveRDS(object, tmp_path)
     }
-    # Atomic rename operation
     if (!file.rename(tmp_path, path)) {
       file.copy(tmp_path, path, overwrite = TRUE)
       unlink(tmp_path)
     }
-    # Attempt to set permissions (Friendly to group access)
     if (.Platform$OS.type == "unix") try(Sys.chmod(path, mode = "0664", use_umask = FALSE), silent=TRUE)
   }, error = function(e) {
     if (file.exists(tmp_path)) unlink(tmp_path)
@@ -479,7 +549,6 @@ cacheFile <- function(cache_dir    = NULL,
 #' Safe Load
 #'
 #' Wrapper around readRDS/qread to handle backends consistently.
-#' Returns the FULL object (including metadata), not just the value.
 #'
 #' @param path Path to cache file.
 #' @param backend "rds" or "qs".
@@ -497,15 +566,15 @@ cacheFile <- function(cache_dir    = NULL,
 #' 
 #' Deeply hashes a function object. It recurses into the function's:
 #' 1. Body and Formals.
-#' 2. Global variables (via `codetools::findGlobals`).
-#' 3. Enclosing environment (if not global/package).
-#' 4. Package dependencies (injecting version numbers).
-#' 5. File paths found in string constants.
+#' 2. Global variables (recursing into lists and detecting file paths).
+#' 3. Enclosing environment.
+#' 4. Package dependencies.
+#' 5. Connections (by hashing the backing file if resolvable).
 #'
 #' @param obj The object (usually a function) to hash.
 #' @param visited Environment to track recursion and avoid infinite loops.
 #' @param algo Hash algorithm.
-#' @param version_checker Function to retrieve package versions (injectable for testing).
+#' @param version_checker Function to retrieve package versions.
 #' 
 #' @return String hash.
 #' @keywords internal
@@ -524,7 +593,6 @@ cacheFile <- function(cache_dir    = NULL,
     fn_env <- environment(obj)
     if (is.environment(fn_env) && isNamespace(fn_env)) {
       pkg_name <- getNamespaceName(fn_env)
-      # We trust the package version instead of scanning the package source code
       pkg_ver <- tryCatch(
         as.character(version_checker(pkg_name)), 
         error = function(e) "unknown"
@@ -556,11 +624,9 @@ cacheFile <- function(cache_dir    = NULL,
   
   # Case 2: Environment
   if (is.environment(obj)) {
-    # Skip namespaces and global environment (too large/dynamic)
     if (isNamespace(obj) || identical(obj, .GlobalEnv) || environmentName(obj) != "") {
       return(digest::digest(environmentName(obj), algo = algo))
     }
-    # Convert User Environment to List and hash content
     obj_list <- as.list(obj)
     if (length(obj_list) > 0) {
       obj_list <- obj_list[order(names(obj_list))]
@@ -572,17 +638,37 @@ cacheFile <- function(cache_dir    = NULL,
     return(digest::digest("empty_env", algo = algo))
   }
   
-  # Case 3: Character (Check for files)
+  # Case 3: List (CRITICAL FIX for Global Config List test)
+  # Must recurse into lists to detect file paths or connections nested inside.
+  if (is.list(obj)) {
+     hashes <- lapply(obj, function(x) {
+       .get_recursive_closure_hash(x, visited, algo = algo, version_checker = version_checker)
+     })
+     return(digest::digest(hashes, algo = algo))
+  }
+  
+  # Case 4: Character (Check for files)
   if (is.character(obj)) {
     content_hashes <- vapply(obj, function(x) {
       if (is.na(x) || nchar(x) == 0) return(NA_character_)
-      # If string looks like a file path, hash the file content
       if (file.exists(x) || dir.exists(x)) {
          return(.get_path_hash(x, algo = algo))
       }
       return(NA_character_)
     }, character(1L))
     return(digest::digest(list(val = obj, file_content = content_hashes), algo = algo))
+  }
+  
+  # Case 5: Connection Objects (Base or DBI)
+  if (inherits(obj, "connection") || inherits(obj, "DBIConnection")) {
+     conn_path <- .get_connection_path(obj)
+     if (!is.null(conn_path)) {
+        # Hash the backing file of the connection
+        return(digest::digest(list(
+            conn_class = class(obj), 
+            file_hash = .get_path_hash(conn_path, algo = algo)
+        ), algo = algo))
+     }
   }
   
   # Default: Standard object hash

@@ -1,3 +1,8 @@
+
+[] Symlinks (hash target vs symlink path).
+
+[] Maybe include the directory path itself in metadata, so if you move the entire project folder but preserve relative structure, the cache is still valid (you’re mostly there since you use relative paths inside dirs).]
+
 [] expand to output "targets" file
 
 [] vignette - scRNAseq example

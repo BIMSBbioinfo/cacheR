@@ -14,7 +14,7 @@ knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>"
 )
-
+```
 
 In Machine Learning pipelines, re-running expensive training steps just to tweak a plot or adjust a downstream report is a major productivity killer. cacheR solves this by automatically persisting your models based on their code, data, and hyperparameters.
 
