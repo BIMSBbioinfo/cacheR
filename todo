@@ -1,11 +1,15 @@
-
-[] Symlinks (hash target vs symlink path).
-
-[] Maybe include the directory path itself in metadata, so if you move the entire project folder but preserve relative structure, the cache is still valid (you’re mostly there since you use relative paths inside dirs).]
-
 [] expand to output "targets" file
+[] merkel tree dependency
 
-[] vignette - scRNAseq example
+[] Maybe include the directory path itself in metadata, so if you move the entire project folder but preserve relative structure, the cache is still valid (you’re mostly there since you use relative paths inside dirs).
+
+[] is it possible somehow to track the executing R process using lsos or something similar to track during the first execution, which files are used by the functions
+
+[] So you may miss: Unqualified calls like filter(), select(), lm(), etc., when those functions are not bound directly in environment(f) but only in parent frames on the search path. For package functions defined inside a namespace, you’re safer: an imported function is usually bound in that namespace, so get("filter", envir = myPkgNamespace) will find some function. But in scripts or non-package use, you can easily lose that tracking.
+
+[x] Symlinks (hash target vs symlink path).
+
+[x] vignette - scRNAseq example
 [] renv integration
 
 [] write the web page

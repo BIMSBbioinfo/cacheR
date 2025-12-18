@@ -617,3 +617,303 @@ test_that("Directory hashing detects file renaming (structure changes)", {
   
   expect_false(id1 == id2)
 })
+
+
+# -------------------------------------------------- #
+test_that("file paths in global config list invalidate cache when file changes (no runs counter)", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_config_list_no_runs")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+  count_cache_files <- function(cache_dir) {
+    length(list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE))
+  }
+
+  config <<- list(path = tempfile(fileext = ".txt"))
+  on.exit(rm(config, envir = .GlobalEnv), add = TRUE)
+
+  writeLines("A", config$path)
+
+  f <- cacheFile(cache_dir = cache_dir) %@% function() {
+    readLines(config$path, warn = FALSE)
+  }
+
+  r1 <- f()
+  expect_equal(r1, "A")
+  expect_equal(count_cache_files(cache_dir), 1L)
+
+  writeLines("B", config$path)
+
+  # Desired behaviour: invalidation because config$path points to changed file
+  r2 <- f()
+  expect_equal(r2, "B")
+  expect_equal(count_cache_files(cache_dir), 2L)
+})
+
+
+# -------------------------------------------------- #
+test_that("file paths nested inside argument lists invalidate cache when file changes (no runs counter)", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_arg_list_no_runs")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+  count_cache_files <- function(cache_dir) {
+    length(list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE))
+  }
+
+  cfg <- list(path = tempfile(fileext = ".txt"))
+  writeLines("A", cfg$path)
+
+  g <- cacheFile(cache_dir = cache_dir) %@% function(cfg) {
+    readLines(cfg$path, warn = FALSE)
+  }
+
+  r1 <- g(cfg)
+  expect_equal(r1, "A")
+  expect_equal(count_cache_files(cache_dir), 1L)
+
+  writeLines("B", cfg$path)
+
+  # Desired behaviour: invalidation because cfg$path file changed
+  r2 <- g(cfg)
+  expect_equal(r2, "B")
+  expect_equal(count_cache_files(cache_dir), 2L)
+})
+
+
+# -------------------------------------------------- #
+test_that("non-character file reference via connection invalidates cache when file changes (no runs counter)", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_nonchar_connection_no_runs")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+  count_cache_files <- function(cache_dir) {
+    length(list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE))
+  }
+
+  p <- tempfile(fileext = ".txt")
+  writeLines("A", p)
+
+  con <- file(p, open = "r")
+  on.exit(try(close(con), silent = TRUE), add = TRUE)
+
+  f <- cacheFile(cache_dir = cache_dir) %@% function(con) {
+    seek(con, 0, rw = "read")
+    readLines(con, warn = FALSE)
+  }
+
+  r1 <- f(con)
+  expect_equal(r1, "A")
+  expect_equal(count_cache_files(cache_dir), 1L)
+
+  writeLines("B", p)
+
+  # Desired: invalidation because underlying file changed (even though arg is a connection)
+  r2 <- f(con)
+  expect_equal(r2, "B")
+  expect_equal(count_cache_files(cache_dir), 2L)
+})
+
+
+# -------------------------------------------------- #
+test_that("DBI connection data changes invalidate cache (no runs counter)", {
+  skip_if_not_installed("DBI")
+  skip_if_not_installed("RSQLite")
+
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_dbi_no_runs")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+  count_cache_files <- function(cache_dir) {
+    length(list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE))
+  }
+
+  db_path <- tempfile(fileext = ".sqlite")
+  con <- DBI::dbConnect(RSQLite::SQLite(), dbname = db_path)
+  on.exit(try(DBI::dbDisconnect(con), silent = TRUE), add = TRUE)
+
+  DBI::dbExecute(con, "CREATE TABLE t(val TEXT)")
+  DBI::dbExecute(con, "INSERT INTO t(val) VALUES ('A')")
+
+  f <- cacheFile(cache_dir = cache_dir) %@% function(con) {
+    DBI::dbGetQuery(con, "SELECT val FROM t LIMIT 1")$val[[1]]
+  }
+
+  r1 <- f(con)
+  expect_equal(r1, "A")
+  expect_equal(count_cache_files(cache_dir), 1L)
+
+  DBI::dbExecute(con, "DELETE FROM t")
+  DBI::dbExecute(con, "INSERT INTO t(val) VALUES ('B')")
+
+  # Desired: invalidation because DB contents changed
+  r2 <- f(con)
+  expect_equal(r2, "B")
+  expect_equal(count_cache_files(cache_dir), 2L)
+})
+
+
+# -------------------------------------------------- #
+test_that("cache saves WITH WARNING if argument file is modified during execution", {
+  # Setup
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  cache_dir <- file.path(tempdir(), "cache_warn_output_detection")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+  count_cache_files <- function(cache_dir) {
+    length(list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE))
+  }
+
+  # 1. Create a dummy file
+  tf <- tempfile(fileext = ".txt")
+  writeLines("Initial Content", tf)
+
+  # 2. Define a function that modifies the file passed to it
+  f <- cacheFile(cache_dir = cache_dir) %@% function(path) {
+    Sys.sleep(1.1) # Sleep to ensure mtime changes
+    cat("\nNew Line", file = path, append = TRUE)
+    return("Result")
+  }
+
+  # 3. Execution: Expect a Warning, BUT also ensure Cache IS SAVED
+  expect_warning(
+    r1 <- f(tf),
+    regexp = "Function modified argument files during execution"
+  )
+  
+  expect_equal(r1, "Result")
+  
+  # CRITICAL CHECK: The cache directory should NOT be empty. 
+  # We proceed with caching despite the warning.
+  expect_equal(count_cache_files(cache_dir), 1L)
+
+  # 4. Control Test: Ensure normal read-only files ARE cached
+  tf2 <- tempfile(fileext = ".txt")
+  writeLines("Static Content", tf2)
+  
+  g <- cacheFile(cache_dir = cache_dir) %@% function(path) {
+    readLines(path, warn = FALSE)
+  }
+  
+  r2 <- g(tf2)
+  expect_equal(r2, "Static Content")
+  # Total cache files should be 2 now
+  expect_equal(count_cache_files(cache_dir), 2L)
+})
+
+
+# -------------------------------------------------- #
+test_that("symlinks are resolved to their target files for caching", {
+  # Symlink creation is OS-dependent and often restricted on Windows
+  skip_on_os("windows")
+  
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_symlinks")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+  count_cache_files <- function(cache_dir) {
+    length(list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE))
+  }
+
+  # 1. Create Target File
+  target_file <- tempfile(fileext = ".txt")
+  writeLines("Original Content", target_file)
+
+  # 2. Create Symlink
+  link_file <- tempfile(fileext = ".link")
+  file.symlink(target_file, link_file)
+  on.exit({ unlink(target_file); unlink(link_file) }, add = TRUE)
+
+  # 3. Define function
+  f <- cacheFile(cache_dir = cache_dir) %@% function(path) {
+    readLines(path, warn = FALSE)
+  }
+
+  # 4. Run with SYMLINK
+  r1 <- f(link_file)
+  expect_equal(r1, "Original Content")
+  expect_equal(count_cache_files(cache_dir), 1L)
+
+  # 5. Run with TARGET FILE
+  # Should HIT the cache created by the symlink run because they resolve to the same path
+  r2 <- f(target_file) 
+  expect_equal(r2, "Original Content")
+  # Cache count should still be 1 (No new file created)
+  expect_equal(count_cache_files(cache_dir), 1L)
+
+  # 6. Modify Target
+  writeLines("Modified Content", target_file)
+
+  # 7. Run with SYMLINK again
+  # Should invalidate cache because target content changed
+  r3 <- f(link_file)
+  expect_equal(r3, "Modified Content")
+  expect_equal(count_cache_files(cache_dir), 2L)
+})
+
+
+
+# -------------------------------------------------- #
+test_that("hash_file_paths controls location sensitivity", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+  
+  # Setup Directories
+  base_dir <- file.path(tempdir(), "cache_arg_toggle")
+  unlink(base_dir, recursive = TRUE, force = TRUE)
+  dir.create(base_dir, recursive = TRUE)
+  
+  dir_A <- file.path(base_dir, "A"); dir.create(dir_A)
+  dir_B <- file.path(base_dir, "B"); dir.create(dir_B)
+  
+  # Create Identical Content in two places
+  file_A <- file.path(dir_A, "data.txt"); writeLines("XYZ", file_A)
+  file_B <- file.path(dir_B, "data.txt"); writeLines("XYZ", file_B)
+
+  count_cache <- function(d) length(list.files(d, pattern="\\.(rds|qs)$"))
+
+  # -----------------------------------------------------------------------
+  # CASE 1: Strict Mode (hash_file_paths = TRUE)
+  # -----------------------------------------------------------------------
+  cache_strict <- file.path(base_dir, "cache_strict")
+  
+  f_strict <- cacheFile(cache_dir = cache_strict, hash_file_paths = TRUE) %@% function(p) {
+    readLines(p, warn = FALSE)
+  }
+  
+  # Run A
+  expect_equal(f_strict(file_A), "XYZ")
+  expect_equal(count_cache(cache_strict), 1L)
+  
+  # Run B (Different Path, Same Content) -> EXPECT NEW CACHE
+  expect_equal(f_strict(file_B), "XYZ")
+  expect_equal(count_cache(cache_strict), 2L) # Missed, created new entry
+  
+  # -----------------------------------------------------------------------
+  # CASE 2: Portable Mode (hash_file_paths = FALSE)
+  # -----------------------------------------------------------------------
+  cache_portable <- file.path(base_dir, "cache_portable")
+  
+  f_portable <- cacheFile(cache_dir = cache_portable, hash_file_paths = FALSE) %@% function(p) {
+    readLines(p, warn = FALSE)
+  }
+  
+  # Run A
+  expect_equal(f_portable(file_A), "XYZ")
+  expect_equal(count_cache(cache_portable), 1L)
+  
+  # Run B (Different Path, Same Content) -> EXPECT REUSED CACHE
+  expect_equal(f_portable(file_B), "XYZ")
+  expect_equal(count_cache(cache_portable), 1L) # Hit, no new entry
+})

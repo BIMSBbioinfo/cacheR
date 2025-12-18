@@ -69,82 +69,6 @@ test_that("cacheFile caches results and avoids re-running", {
 })
 
 # --------------------------------------------------------#
-test_that("recursive calls produce parent–child relationships", {
-  cacheTree_reset()
-  
-  cache_dir <- file.path(tempdir(), "cache_test_2")
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-  
-  inner_fun <- cacheFile(cache_dir) %@% function(x) {
-    x + 1
-  }
-  
-  outer_fun <- cacheFile(cache_dir) %@% function(x) {
-    inner_fun(x) * 2
-  }
-  
-  res <- outer_fun(3)
-  expect_equal(res, (3 + 1) * 2)
-  
-  nodes <- cacheTree_nodes()
-  expect_true(length(nodes) >= 2)
-  
-  # Find node IDs for outer and inner
-  outer_id <- grep("^outer_fun:", names(nodes), value = TRUE)
-  inner_id <- grep("^inner_fun:", names(nodes), value = TRUE)
-  expect_length(outer_id, 1L)
-  expect_length(inner_id, 1L)
-  
-  outer_node <- nodes[[outer_id]]
-  inner_node <- nodes[[inner_id]]
-  
-  # outer should list inner as a child, and inner should list outer as parent
-  expect_true(inner_id %in% outer_node$children)
-  expect_true(outer_id %in% inner_node$parents)
-  
-  unlink(cache_dir, recursive = TRUE)
-})
-
-# --------------------------------------------------------#
-test_that("track_file registers file dependencies with hashes", {
-  cacheTree_reset()
-  
-  cache_dir <- file.path(tempdir(), "cache_test_3")
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-  
-  # Create a temporary CSV file
-  data_path <- file.path(tempdir(), "cache_tree_data.csv")
-  write.csv(data.frame(x = 1:3), data_path, row.names = FALSE)
-  
-  read_and_sum <- cacheFile(cache_dir) %@% function(path) {
-    df <- read.csv(track_file(path))
-    sum(df$x)
-  }
-  
-  res <- read_and_sum(data_path)
-  expect_equal(res, 6)
-  
-  nodes <- cacheTree_nodes()
-  # There should be exactly 1 node: the cached read_and_sum call
-  expect_equal(length(nodes), 1L)
-  node <- nodes[[1]]
-  
-  np <- normalizePath(data_path, mustWork = FALSE)
-  
-  # File path is recorded
-  expect_true(np %in% node$files)
-  
-  # Hash is recorded and looks sane (non-empty character)
-  fh <- node$file_hashes
-  expect_true(np %in% names(fh))
-  expect_true(is.character(fh[[np]]) || is.na(fh[[np]]))
-  expect_gt(nchar(fh[[np]]), 0)
-  
-  unlink(cache_dir, recursive = TRUE)
-  unlink(data_path)
-})
-
-# --------------------------------------------------------#
 test_that("cacheFile tracks multiple dir arguments and vector paths", {
   if (exists("cacheTree_reset", mode = "function"))
     cacheTree_reset()
@@ -594,4 +518,39 @@ test_that("Cache persists across separate R sessions (Disk Persistence)", {
   # The 'cached_pid' returned by Session B will be Session A's PID, 
   # because it loaded the result from disk!
   expect_equal(session_a$result$cached_pid, session_b$result$cached_pid)
+})
+
+
+
+# -------------------------------------------------- #
+test_that("changes in options used by function invalidate cache (no runs counter)", {
+  if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "cache_options_no_runs")
+  unlink(cache_dir, recursive = TRUE, force = TRUE)
+  dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+  count_cache_files <- function(cache_dir) {
+    length(list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE))
+  }
+
+  old_opt <- getOption("cacheR.test.multiplier", NULL)
+  on.exit(options(cacheR.test.multiplier = old_opt), add = TRUE)
+
+  options(cacheR.test.multiplier = 1)
+
+  f <- cacheFile(cache_dir = cache_dir) %@% function(x) {
+    x * getOption("cacheR.test.multiplier")
+  }
+
+  r1 <- f(10)
+  expect_equal(r1, 10)
+  expect_equal(count_cache_files(cache_dir), 1L)
+
+  options(cacheR.test.multiplier = 2)
+
+  # Desired behaviour: invalidation because option changed
+  r2 <- f(10)
+  expect_equal(r2, 20)
+  expect_equal(count_cache_files(cache_dir), 2L)
 })

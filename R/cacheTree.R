@@ -1,224 +1,87 @@
-# cacheTree.R --------------------------------------------------------------
+# =========================================================================
+# cacheR: Graph Visualization & Management Utilities
+# =========================================================================
 
-# Global environment to store analysis graph + call stack
-.cacheTree_env <- new.env(parent = emptyenv())
-.cacheTree_env$call_stack <- character()
-.cacheTree_env$graph      <- new.env(parent = emptyenv())
+# -------------------------------------------------------------------------
+# 1. Graph State Inspection
+# -------------------------------------------------------------------------
 
-# --- Helpers to manage the graph -----------------------------------------
-
-.cacheTree_current_node <- function() {
-  s <- .cacheTree_env$call_stack
-  if (!length(s)) return(NA_character_)
-  s[[length(s)]]
-}
-
-.cacheTree_register_node <- function(node_id, fname, args_hash, outfile) {
-  parent <- .cacheTree_current_node()
-
-  node <- .cacheTree_env$graph[[node_id]]
-  if (is.null(node)) {
-    node <- list(
-      id          = node_id,
-      fname       = as.character(fname),
-      hash        = args_hash,
-      outfile     = outfile,
-      parents     = character(),
-      children    = character(),
-      files       = character(),
-      file_hashes = character(),  # named character vector
-      created     = Sys.time()
-    )
-  }
-
-  # Link to parent, if any
-  if (!is.na(parent)) {
-    node$parents <- unique(c(node$parents, parent))
-
-    parent_node <- .cacheTree_env$graph[[parent]]
-    if (is.null(parent_node)) {
-      parent_node <- list(
-        id          = parent,
-        fname       = NA_character_,
-        hash        = NA_character_,
-        outfile     = NA_character_,
-        parents     = character(),
-        children    = character(),
-        files       = character(),
-        file_hashes = character(),
-        created     = Sys.time()
-      )
-    }
-    parent_node$children <- unique(c(parent_node$children, node_id))
-    .cacheTree_env$graph[[parent]] <- parent_node
-  }
-
-  .cacheTree_env$graph[[node_id]] <- node
-}
-
-# Public helpers -----------------------------------------------------------
-#' Return cache tree nodes
-#'
-#' Returns a list/data.frame describing all nodes currently recorded
-#' in the cache tree (each cached call instance).
-#'
-#' @return An object representing nodes (e.g. a data.frame with
-#'   `id`, `fn_label`, `key`, `cache_file`, etc.).
+#' Get all nodes
 #' @export
 cacheTree_nodes <- function() {
-  # returns a named list of all nodes
-  ids <- ls(.cacheTree_env$graph, all.names = TRUE)
-  setNames(
-    lapply(ids, function(k) .cacheTree_env$graph[[k]]),
-    ids
-  )
+  # Always return a list to support iteration and subsetting functions like Filter
+  as.list(.graph_cache$nodes)
 }
 
-# ------------------------------------------------------------ #
+#' Find nodes associated with a specific file path
+#' @export
 cacheTree_for_file <- function(path) {
-  np <- tryCatch(normalizePath(path, mustWork = FALSE),
-                 error = function(e) path)
-  nodes <- cacheTree_nodes()
-  keep <- vapply(nodes, function(n) np %in% n$files, logical(1))
-  nodes[keep]
+  path <- normalizePath(path, mustWork = FALSE, winslash = "/")
+  
+  # Ensure all_nodes is a list
+  all_nodes <- cacheTree_nodes()
+  if (is.environment(all_nodes)) all_nodes <- as.list(all_nodes)
+  
+  # Filter nodes where 'path' is in the files list
+  Filter(function(x) path %in% x$files, all_nodes)
 }
 
-# ------------------------------------------------------------ #
 #' Reset the cache tree state
-#'
-#' Clears all recorded parent-child relationships between cached calls.
-#' Does not (by default) delete files from disk (that should be handled
-#' separately, e.g. by cleaning `cache_dir`).
-#'
 #' @export
 cacheTree_reset <- function() {
-  .cacheTree_env$call_stack <- character()
-  .cacheTree_env$graph      <- new.env(parent = emptyenv())
+  cacheR_reset_graph() # Calls the internal reset defined in cacheFile.R
   invisible(TRUE)
 }
 
+# -------------------------------------------------------------------------
+# 2. Graph Persistence (Save/Load the visualization data)
+# -------------------------------------------------------------------------
+
+#' Save the execution graph
+#' @export
 cacheTree_save <- function(path) {
-  # Save a serializable representation (named list of nodes)
-  saveRDS(cacheTree_nodes(), path)
+  saveRDS(list(
+    nodes = .graph_cache$nodes,
+    edges = .graph_cache$edges
+  ), path)
   invisible(path)
 }
 
+#' Load an execution graph
+#' @export
 cacheTree_load <- function(path) {
-  graph_list <- readRDS(path)
-  .cacheTree_env$graph <- new.env(parent = emptyenv())
-  for (id in names(graph_list)) {
-    .cacheTree_env$graph[[id]] <- graph_list[[id]]
-  }
-  .cacheTree_env$call_stack <- character()
+  data <- readRDS(path)
+  if (!all(c("nodes", "edges") %in% names(data))) stop("Invalid graph file")
+  
+  .graph_cache$nodes <- data$nodes
+  .graph_cache$edges <- data$edges
+  .graph_cache$call_stack <- character() # Reset stack on load
   invisible(TRUE)
 }
 
 # -------------------------------------------------------------------------
-# File fingerprinting + probabilistic hashing + metadata cache
-# -------------------------------------------------------------------------
-# Strategy:
-#   - For each file path, store:
-#       fp   = paste(size, mtime)
-#       hash = sampled content hash
-#   - On each call:
-#       * If size+mtime unchanged → reuse old hash (no disk read)
-#       * Else → recompute probabilistic hash from sampled blocks
+# 3. File & Directory Management
 # -------------------------------------------------------------------------
 
-# ---------------- file hashing (metadata + probabilistic) -----------------
-
-
-# ------------------------------------------------------------ #
-track_file <- function(path) {
-  node_id <- .cacheTree_current_node()
-  if (is.na(node_id)) return(path)
-
-  node <- .cacheTree_env$graph[[node_id]]
-  if (is.null(node)) return(path)
-
-  np <- tryCatch(
-    normalizePath(path, mustWork = FALSE),
-    error = function(e) path
-  )
-
-  node$files <- unique(c(node$files, np))
-
-  fh <- node$file_hashes
-  if (is.null(fh)) fh <- character()
-
-  if (file.exists(path)) {
-    fh[np] <- .fast_file_hash(path)
-  } else {
-    fh[np] <- NA_character_
-  }
-
-  node$file_hashes <- fh
-  .cacheTree_env$graph[[node_id]] <- node
-
-  path
-}
-
-# ------------------------------------------------------------ #
-cacheTree_changed_files <- function() {
-  nodes <- cacheTree_nodes()
-  out   <- list()
-
-  for (id in names(nodes)) {
-    n  <- nodes[[id]]
-    fh <- n$file_hashes
-    if (!length(fh)) next
-
-    cur_paths <- names(fh)
-    changed   <- logical(length(fh))
-
-    for (i in seq_along(cur_paths)) {
-      p        <- cur_paths[[i]]
-      old_hash <- fh[[i]]
-
-      if (!file.exists(p)) {
-        changed[i] <- TRUE
-      } else {
-        new_hash <- .fast_file_hash(p)
-        changed[i] <- !identical(old_hash, new_hash)
-      }
-    }
-
-    if (any(changed)) {
-      out[[id]] <- list(
-        node          = n,
-        changed_files = cur_paths[changed]
-      )
-    }
-  }
-
-  out
-}
-
-
-# ------------------------------------------------------------ #
+#' Get Default Cache Directory
+#' @export
 cacheR_default_dir <- function() {
   d <- getOption("cacheR.dir", file.path(getwd(), ".cacheR"))
-
   if (!dir.exists(d)) {
     dir.create(d, recursive = TRUE, showWarnings = FALSE)
   }
-
   d
 }
 
-# ------------------------------------------------------------ #
 #' Prune old cache files
-#' @param days_old Delete files not accessed in X days
+#' @param cache_dir Directory to prune
+#' @param days_old Delete files not accessed/modified in X days
 #' @export
-cachePrune <- function(cache_dir, days_old = 30) {
+cachePrune <- function(cache_dir = cacheR_default_dir(), days_old = 30) {
   files <- list.files(cache_dir, full.names = TRUE, pattern = "\\.(rds|qs)$")
   if (length(files) == 0) return(invisible())
   
-  # Get file info
   info <- file.info(files)
-  
-  # Calculate age based on 'atime' (access time) if supported, else 'mtime'
-  # Note: atime updates depend on OS/filesystem settings (noatime mount option)
   now <- Sys.time()
   age <- difftime(now, info$mtime, units = "days")
   
@@ -230,86 +93,66 @@ cachePrune <- function(cache_dir, days_old = 30) {
   }
 }
 
-
-#--- Internal Helper: Normalize Path with Forward Slashes ---
-.norm_path <- function(path) {
-  normalizePath(path, winslash = "/", mustWork = FALSE)
-}
-
-# --- Cache Info & List Utilities ------------------------------------------
+# -------------------------------------------------------------------------
+# 4. Cache Inspection (List & Info)
+# -------------------------------------------------------------------------
 
 #' Retrieve metadata from a cached file
-#' 
-#' @param path Path to the .rds file
-#' @return A list containing $value and $meta
 #' @export
 cacheInfo <- function(path) {
   if (!file.exists(path)) stop("File not found: ", path)
   
-  obj <- readRDS(path)
+  # Support QS if extension matches
+  is_qs <- grepl("\\.qs$", path)
+  
+  obj <- if (is_qs) {
+    if (!requireNamespace("qs", quietly=TRUE)) stop("qs package required")
+    qs::qread(path)
+  } else {
+    readRDS(path)
+  }
   
   # Check if it matches the new metadata structure
-  is_new_format <- is.list(obj) && 
-                   all(c("value", "meta") %in% names(obj)) && 
-                   is.list(obj$meta)
+  is_new_format <- is.list(obj) && all(c("value", "meta") %in% names(obj))
   
   if (is_new_format) {
     return(obj)
   } else {
-    # Legacy handling: wrap raw value in structure
+    # Legacy handling
     return(list(
       value = obj,
       meta = list(
-        fname       = NA_character_,
-        args        = list(),
-        args_hash   = NA_character_,
-        cache_file  = .norm_path(path),
-        cache_dir   = .norm_path(dirname(path)),
-        created     = file.info(path)$mtime,
-        legacy      = TRUE
+        fname = NA_character_,
+        created = file.info(path)$mtime,
+        legacy = TRUE
       )
     ))
   }
 }
 
 #' List contents of a cache directory
-#'
-#' @param cache_dir Directory to scan
-#' @return A data.frame of cache files and metadata
 #' @export
-cacheList <- function(cache_dir) {
-  if (!dir.exists(cache_dir)) {
-    return(data.frame(
-      file = character(), 
-      fname = character(), 
-      created = as.POSIXct(character()), 
-      size_bytes = numeric(),
-      stringsAsFactors = FALSE
-    ))
-  }
+cacheList <- function(cache_dir = cacheR_default_dir()) {
+  if (!dir.exists(cache_dir)) return(data.frame())
   
-  files <- list.files(cache_dir, full.names = TRUE, pattern = "\\.rds$")
+  files <- list.files(cache_dir, full.names = TRUE, pattern = "\\.(rds|qs)$")
+  if (length(files) == 0) return(data.frame())
   
-  if (length(files) == 0) {
-    return(data.frame(
-      file = character(), 
-      fname = character(), 
-      created = as.POSIXct(character()), 
-      size_bytes = numeric(),
-      stringsAsFactors = FALSE
-    ))
-  }
-  
-  # Extract info from each file
   rows <- lapply(files, function(f) {
-    info <- tryCatch(cacheInfo(f), error = function(e) NULL)
+    # Lightweight check: mostly rely on file system stats
+    # Loading every file to check metadata might be slow, 
+    # so we might want to skip cacheInfo(f) for a simple list.
+    # But if you need the function name, we must load.
+    
     file_stat <- file.info(f)
     
-    if (is.null(info)) {
-      fname <- NA_character_
-    } else {
-      fname <- if (!is.null(info$meta$fname)) info$meta$fname else NA_character_
-    }
+    # Try to peek metadata (expensive)
+    fname <- NA_character_
+    try({
+       # Only read if small enough? Or just accept the cost.
+       info <- cacheInfo(f)
+       if (!is.null(info$meta$fname)) fname <- info$meta$fname
+    }, silent = TRUE)
     
     data.frame(
       file       = basename(f),
@@ -322,5 +165,3 @@ cacheList <- function(cache_dir) {
   
   do.call(rbind, rows)
 }
-
-`%||%` <- function(a, b) if (!is.null(a)) a else b
