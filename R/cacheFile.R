@@ -294,6 +294,20 @@ track_file <- function(path, cache_dir = NULL) {
   } else if (inherits(x, "connection") || inherits(x, "DBIConnection")) {
     p <- .get_connection_path(x)
     if (!is.null(p)) paths <- c(paths, p)
+  } else if (isS4(x)) {
+    for (sn in slotNames(x)) {
+      paths <- c(paths, .extract_paths_recursively(slot(x, sn)))
+    }
+  }
+  # Check custom attributes for file paths (applies to any object type)
+  attrs <- attributes(x)
+  if (!is.null(attrs)) {
+    std_attrs <- c("names", "class", "dim", "dimnames", "row.names",
+                   "levels", "tsp", "comment")
+    custom_attrs <- attrs[!names(attrs) %in% std_attrs]
+    for (a in custom_attrs) {
+      paths <- c(paths, .extract_paths_recursively(a))
+    }
   }
   return(paths)
 }
@@ -335,6 +349,26 @@ track_file <- function(path, cache_dir = NULL) {
   } else if (inherits(x, "connection") || inherits(x, "DBIConnection")) {
      p <- .get_connection_path(x)
      if (!is.null(p)) return(.fast_file_hash(p, algo = algo))
+  } else if (isS4(x)) {
+    slot_hashes <- list()
+    for (sn in slotNames(x)) {
+      slot_hashes[[sn]] <- .replace_paths_with_hashes(slot(x, sn), file_pattern, algo)
+    }
+    return(digest::digest(slot_hashes, algo = algo))
+  }
+  # Check custom attributes for file paths
+  attrs <- attributes(x)
+  if (!is.null(attrs)) {
+    std_attrs <- c("names", "class", "dim", "dimnames", "row.names",
+                   "levels", "tsp", "comment")
+    custom_attrs <- attrs[!names(attrs) %in% std_attrs]
+    if (length(custom_attrs) > 0) {
+      hashed_attrs <- lapply(custom_attrs, .replace_paths_with_hashes,
+                             file_pattern = file_pattern, algo = algo)
+      if (!identical(hashed_attrs, custom_attrs)) {
+        return(digest::digest(list(value = x, hashed_attrs = hashed_attrs), algo = algo))
+      }
+    }
   }
   return(x)
 }

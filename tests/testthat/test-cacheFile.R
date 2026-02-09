@@ -1091,3 +1091,156 @@ test_that("reversed named args hit same cache as positional (Issue #15)", {
   expect_equal(res2$val, 7)
   expect_equal(res1$run_id, res2$run_id)
 })
+
+# =========================================================================
+# File path detection in R objects
+# =========================================================================
+
+describe("File path detection in R objects", {
+
+  it("detects file path in S4 object slot", {
+    setClass("TestFileRef", representation(path = "character", label = "character"))
+    on.exit(removeClass("TestFileRef"), add = TRUE)
+
+    tmp <- tempfile(fileext = ".txt")
+    writeLines("hello", tmp)
+    on.exit(unlink(tmp), add = TRUE)
+
+    obj <- new("TestFileRef", path = tmp, label = "test")
+
+    # extract_paths_recursively should find the path
+    paths <- cacheR:::.extract_paths_recursively(obj)
+    expect_true(tmp %in% paths)
+
+    # replace_paths_with_hashes should produce a hash that changes when file changes
+    hash1 <- cacheR:::.replace_paths_with_hashes(obj, algo = "xxhash64")
+    writeLines("world", tmp)
+    hash2 <- cacheR:::.replace_paths_with_hashes(obj, algo = "xxhash64")
+    expect_false(identical(hash1, hash2))
+  })
+
+  it("detects file paths in nested S4 object", {
+    setClass("TestNestedRef", representation(files = "list", name = "character"))
+    on.exit(removeClass("TestNestedRef"), add = TRUE)
+
+    tmp1 <- tempfile(fileext = ".csv")
+    tmp2 <- tempfile(fileext = ".csv")
+    writeLines("a,b", tmp1)
+    writeLines("c,d", tmp2)
+    on.exit(unlink(c(tmp1, tmp2)), add = TRUE)
+
+    obj <- new("TestNestedRef", files = list(tmp1, tmp2), name = "dataset")
+
+    paths <- cacheR:::.extract_paths_recursively(obj)
+    expect_true(tmp1 %in% paths)
+    expect_true(tmp2 %in% paths)
+  })
+
+  it("detects file path in custom attribute", {
+    tmp <- tempfile(fileext = ".dat")
+    writeLines("data", tmp)
+    on.exit(unlink(tmp), add = TRUE)
+
+    x <- 1:10
+    attr(x, "source_file") <- tmp
+
+    paths <- cacheR:::.extract_paths_recursively(x)
+    expect_true(tmp %in% paths)
+
+    # Hash should change when file changes
+    hash1 <- cacheR:::.replace_paths_with_hashes(x, algo = "xxhash64")
+    writeLines("new data", tmp)
+    hash2 <- cacheR:::.replace_paths_with_hashes(x, algo = "xxhash64")
+    expect_false(identical(hash1, hash2))
+  })
+
+  it("detects file paths in data frame columns", {
+    tmp <- tempfile(fileext = ".txt")
+    writeLines("content", tmp)
+    on.exit(unlink(tmp), add = TRUE)
+
+    df <- data.frame(id = 1:2, file = c(tmp, "nonexistent_file.txt"),
+                     stringsAsFactors = FALSE)
+
+    paths <- cacheR:::.extract_paths_recursively(df)
+    expect_true(tmp %in% paths)
+    expect_false("nonexistent_file.txt" %in% paths)
+  })
+
+  it("end-to-end: cache invalidates when file in S4 slot changes", {
+    setClass("TestInput", representation(filepath = "character"))
+    on.exit(removeClass("TestInput"), add = TRUE)
+
+    cache_dir <- file.path(tempdir(), paste0("s4_e2e_", as.integer(Sys.time())))
+    dir.create(cache_dir, recursive = TRUE)
+    on.exit(unlink(cache_dir, recursive = TRUE), add = TRUE)
+
+    tmp <- tempfile(fileext = ".txt")
+    writeLines("version1", tmp)
+    on.exit(unlink(tmp), add = TRUE)
+
+    f <- function(obj) {
+      list(data = readLines(obj@filepath), run_id = as.numeric(Sys.time()))
+    }
+    cached_f <- cacheFile(cache_dir, backend = "rds") %@% f
+
+    input <- new("TestInput", filepath = tmp)
+
+    res1 <- cached_f(input)
+    expect_equal(res1$data, "version1")
+
+    Sys.sleep(1.1)
+
+    # Same object, same file content — cache hit
+    res2 <- cached_f(input)
+    expect_equal(res1$run_id, res2$run_id)
+
+    # Change the file content — should invalidate cache
+    writeLines("version2", tmp)
+    Sys.sleep(1.1)
+    res3 <- cached_f(input)
+    expect_equal(res3$data, "version2")
+    expect_false(res1$run_id == res3$run_id)
+  })
+
+  it("end-to-end: cache invalidates when file in attribute changes", {
+    cache_dir <- file.path(tempdir(), paste0("attr_e2e_", as.integer(Sys.time())))
+    dir.create(cache_dir, recursive = TRUE)
+    on.exit(unlink(cache_dir, recursive = TRUE), add = TRUE)
+
+    tmp <- tempfile(fileext = ".txt")
+    writeLines("v1", tmp)
+    on.exit(unlink(tmp), add = TRUE)
+
+    f <- function(x) {
+      src <- attr(x, "source_file")
+      list(content = readLines(src), run_id = as.numeric(Sys.time()))
+    }
+    cached_f <- cacheFile(cache_dir, backend = "rds") %@% f
+
+    x <- 42
+    attr(x, "source_file") <- tmp
+
+    res1 <- cached_f(x)
+    expect_equal(res1$content, "v1")
+
+    Sys.sleep(1.1)
+
+    # Change file content
+    writeLines("v2", tmp)
+    Sys.sleep(1.1)
+    res2 <- cached_f(x)
+    expect_equal(res2$content, "v2")
+    expect_false(res1$run_id == res2$run_id)
+  })
+
+  it("S4 object with no file paths produces no false positives", {
+    setClass("TestNumeric", representation(value = "numeric", label = "character"))
+    on.exit(removeClass("TestNumeric"), add = TRUE)
+
+    obj <- new("TestNumeric", value = 42, label = "not_a_file_path")
+
+    paths <- cacheR:::.extract_paths_recursively(obj)
+    expect_length(paths, 0)
+  })
+})
