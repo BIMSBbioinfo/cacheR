@@ -39,30 +39,81 @@ cacheTree_nodes <- function() {
   as.list(.graph_cache$nodes)
 }
 
+#' Append graph changes to disk (Persistence Layer)
+#' @keywords internal
+.append_graph_to_disk <- function(cache_dir, new_node = NULL, new_edge = NULL) {
+  if (is.null(cache_dir)) return()
+  
+  graph_file <- file.path(cache_dir, "graph.rds")
+  lock_file  <- paste0(graph_file, ".lock")
+  
+  # Try to acquire lock
+  if (requireNamespace("filelock", quietly = TRUE)) {
+    lock <- tryCatch(filelock::lock(lock_file, timeout = 5000), error = function(e) NULL)
+    if (!is.null(lock)) on.exit(filelock::unlock(lock), add = TRUE)
+  }
+  
+  # Load existing
+  current_graph <- list(nodes = list(), edges = list())
+  if (file.exists(graph_file)) {
+    try({ current_graph <- readRDS(graph_file) }, silent = TRUE)
+  }
+  
+  changed <- FALSE
+  
+  # Append Node
+  if (!is.null(new_node)) {
+    # Check by ID to prevent duplicates
+    existing_ids <- vapply(current_graph$nodes, function(n) n$id, character(1))
+    if (!new_node$id %in% existing_ids) {
+      current_graph$nodes[[length(current_graph$nodes) + 1]] <- new_node
+      changed <- TRUE
+    }
+  }
+  
+  # Append Edge
+  if (!is.null(new_edge)) {
+    edge_sig <- function(e) paste(e$from, e$to, sep="|")
+    existing_sigs <- vapply(current_graph$edges, edge_sig, character(1))
+    new_sig <- edge_sig(new_edge)
+    
+    if (!new_sig %in% existing_sigs) {
+      current_graph$edges[[length(current_graph$edges) + 1]] <- new_edge
+      changed <- TRUE
+    }
+  }
+  
+  if (changed) saveRDS(current_graph, graph_file)
+}
+
 #' Register a Node
 #' @keywords internal
-.register_node <- function(id, type, label = id, code = NULL) {
+.register_node <- function(id, type, label = id, code = NULL, cache_dir = NULL) {
+  # 1. Update In-Memory
   if (!exists(id, envir = .graph_cache$nodes)) {
-    assign(id, list(
-      id = id, 
-      type = type, 
-      label = label, 
-      code = code,
-      files = character(),
-      file_hashes = list(),
-      children = character(),
-      parents = character()
-    ), envir = .graph_cache$nodes)
+    node <- list(
+      id = id, type = type, label = label, code = code,
+      files = character(), file_hashes = list(),
+      children = character(), parents = character(),
+      time = Sys.time()
+    )
+    assign(id, node, envir = .graph_cache$nodes)
+    
+    # 2. Update Disk
+    .append_graph_to_disk(cache_dir, new_node = node)
   }
 }
 
 #' Register an Edge
 #' @keywords internal
-.register_edge <- function(from, to) {
+.register_edge <- function(from, to, cache_dir = NULL) {
   edge_id <- paste(from, to, sep = "->")
+  
   if (!exists(edge_id, envir = .graph_cache$edges)) {
-    assign(edge_id, list(from = from, to = to), envir = .graph_cache$edges)
+    edge <- list(from = from, to = to)
+    assign(edge_id, edge, envir = .graph_cache$edges)
     
+    # Update In-Memory Links
     if (exists(from, envir = .graph_cache$nodes)) {
       n <- get(from, envir = .graph_cache$nodes)
       n$children <- unique(c(n$children, to))
@@ -73,6 +124,9 @@ cacheTree_nodes <- function() {
       n$parents <- unique(c(n$parents, from))
       assign(to, n, envir = .graph_cache$nodes)
     }
+    
+    # Update Disk
+    .append_graph_to_disk(cache_dir, new_edge = edge)
   }
 }
 
@@ -81,32 +135,36 @@ cacheTree_nodes <- function() {
 cacheTree_for_file <- function(path) {
   path <- normalizePath(path, mustWork = FALSE, winslash = "/")
   all_nodes <- cacheTree_nodes()
-  # Filter nodes where 'path' is in the files list
   Filter(function(x) path %in% x$files, all_nodes)
 }
 
-#' Save the current graph to disk
+#' Load graph from disk into memory
 #' @export
-cacheTree_save <- function(file) {
-  data <- list(
-    nodes = as.list(.graph_cache$nodes),
-    edges = as.list(.graph_cache$edges)
-  )
-  saveRDS(data, file)
-}
-
-#' Load a graph from disk
-#' @export
-cacheTree_load <- function(file) {
-  data <- readRDS(file)
-  cacheTree_reset()
-  list2env(data$nodes, envir = .graph_cache$nodes)
-  list2env(data$edges, envir = .graph_cache$edges)
+cacheTree_sync <- function(cache_dir) {
+  graph_file <- file.path(cache_dir, "graph.rds")
+  if (file.exists(graph_file)) {
+    data <- tryCatch(readRDS(graph_file), error = function(e) NULL)
+    if (!is.null(data)) {
+      # Load Nodes
+      for (n in data$nodes) {
+        if (!exists(n$id, envir = .graph_cache$nodes)) {
+          assign(n$id, n, envir = .graph_cache$nodes)
+        }
+      }
+      # Load Edges
+      for (e in data$edges) {
+        edge_id <- paste(e$from, e$to, sep = "->")
+        if (!exists(edge_id, envir = .graph_cache$edges)) {
+          assign(edge_id, e, envir = .graph_cache$edges)
+        }
+      }
+    }
+  }
 }
 
 #' Explicitly Track a File Dependency
 #' @export
-track_file <- function(path) {
+track_file <- function(path, cache_dir = NULL) {
   path_norm <- normalizePath(path, mustWork = FALSE, winslash = "/")
   
   if (dir.exists(path_norm)) {
@@ -116,13 +174,13 @@ track_file <- function(path) {
   }
   
   # Register the file as a node
-  .register_node(id = path_norm, type = "file", label = basename(path_norm))
+  .register_node(id = path_norm, type = "file", label = basename(path_norm), cache_dir = cache_dir)
   
   if (length(.graph_cache$call_stack) > 0) {
     active_node_id <- tail(.graph_cache$call_stack, 1)
     
     # Register Edge: Function -> File
-    .register_edge(from = active_node_id, to = path_norm)
+    .register_edge(from = active_node_id, to = path_norm, cache_dir = cache_dir)
     
     # Update Function Node Metadata
     if (exists(active_node_id, envir = .graph_cache$nodes)) {
@@ -132,6 +190,10 @@ track_file <- function(path) {
       }
       node$file_hashes[[path_norm]] <- hash
       assign(active_node_id, node, envir = .graph_cache$nodes)
+      
+      # We don't save metadata updates to disk immediately to save IO, 
+      # but ideally, this update should be synced. 
+      # For now, we rely on the node creation snapshot.
     }
   }
   return(path)
@@ -144,33 +206,39 @@ track_file <- function(path) {
 #' Probabilistic File Hashing
 #' @keywords internal
 #' @export
-.probabilistic_file_hash <- function(path, block_size = 64 * 1024, n_blocks = 5, algo = "xxhash64") {
+.probabilistic_file_hash <- function(path, block_size = 64 * 1024, n_blocks = 5,
+                                      algo = "xxhash64", full_hash_limit = 5 * 1024 * 1024) {
   path <- normalizePath(path, mustWork = FALSE)
   if (!file.exists(path) || dir.exists(path)) return(NA_character_)
-  
+
   info <- file.info(path)
   size <- info$size
   if (is.na(size)) return(NA_character_)
-  
+
   con <- tryCatch(file(path, "rb"), error = function(e) NULL)
   if (is.null(con)) return(NA_character_)
-  
   on.exit(close(con), add = TRUE)
+
+  # Full hash for small-to-medium files
+  if (size <= full_hash_limit) {
+    bytes <- readBin(con, "raw", size)
+    return(digest::digest(bytes, algo = algo))
+  }
+
+  # Probabilistic hash for large files
   blocks <- list()
   blocks[[1]] <- readBin(con, "raw", block_size)
-  
-  if (size > block_size) {
-    max_offset <- max(size - block_size, 1)
-    seed_raw <- charToRaw(digest::digest(paste0(path, size), algo = "crc32"))
-    seed_int <- sum(as.integer(seed_raw))
-    for (i in seq_len(n_blocks)) {
-      offset <- (seed_int * i) %% max_offset + 1L
-      seek(con, offset, "start")
-      blocks[[length(blocks) + 1L]] <- readBin(con, "raw", block_size)
-    }
-    seek(con, max(size - block_size, 0), "start")
+
+  max_offset <- max(size - block_size, 1)
+  seed_int <- strtoi(substring(digest::digest(paste0(path, size), algo = "crc32"), 1, 7), base = 16L)
+  for (i in seq_len(n_blocks)) {
+    offset <- (seed_int * i) %% max_offset + 1L
+    seek(con, offset, "start")
     blocks[[length(blocks) + 1L]] <- readBin(con, "raw", block_size)
   }
+  seek(con, max(size - block_size, 0), "start")
+  blocks[[length(blocks) + 1L]] <- readBin(con, "raw", block_size)
+
   bytes <- do.call(c, blocks)
   digest::digest(bytes, algo = algo)
 }
@@ -246,6 +314,19 @@ track_file <- function(path) {
          return(.fast_file_hash(x, algo = algo))
        }
     }
+    if (length(x) > 1) {
+      return(vapply(x, function(el) {
+        if (!is.na(el) && (file.exists(el) || dir.exists(el))) {
+          if (dir.exists(el)) {
+            .replace_paths_with_hashes(el, file_pattern, algo)
+          } else {
+            .fast_file_hash(el, algo)
+          }
+        } else {
+          el
+        }
+      }, character(1)))
+    }
     return(x)
   } else if (is.list(x)) {
     return(lapply(x, .replace_paths_with_hashes, file_pattern=file_pattern, algo=algo))
@@ -262,18 +343,24 @@ track_file <- function(path) {
 #' @keywords internal
 .scan_ast_deps <- function(expr) {
   pkgs <- character(); opts <- character()
-  if (is.call(expr)) {
-    fn_sym <- expr[[1]]
-    if (is.symbol(fn_sym) && (as.character(fn_sym) %in% c("::", ":::"))) pkgs <- c(pkgs, as.character(expr[[2]]))
-    if (is.symbol(fn_sym) && as.character(fn_sym) == "getOption") {
-      val <- tryCatch(eval(expr[[2]]), error = function(e) NULL)
-      if (is.character(val)) opts <- c(opts, val)
+  walker <- function(e) {
+    if (is.call(e)) {
+      fn_name <- tryCatch(as.character(e[[1]]), error = function(z) "")
+      if (length(fn_name) == 1 && fn_name %in% c("library", "require", "requireNamespace")) {
+        if (length(e) >= 2) {
+          arg <- e[[2]]
+          if (is.character(arg)) pkgs <<- c(pkgs, arg)
+          else if (is.symbol(arg)) pkgs <<- c(pkgs, as.character(arg))
+        }
+      }
+      if (length(fn_name) == 1 && fn_name == "getOption") {
+        if (length(e) >= 2 && is.character(e[[2]])) opts <<- c(opts, e[[2]])
+      }
+      lapply(e, walker)
     }
-    for (i in seq_along(expr)) { res <- .scan_ast_deps(expr[[i]]); pkgs <- c(pkgs, res$pkgs); opts <- c(opts, res$opts) }
-  } else if (is.expression(expr) || is.list(expr)) {
-    for (i in seq_along(expr)) { res <- .scan_ast_deps(expr[[i]]); pkgs <- c(pkgs, res$pkgs); opts <- c(opts, res$opts) }
   }
-  return(list(pkgs = unique(pkgs), opts = unique(opts)))
+  walker(expr)
+  list(pkgs = unique(pkgs), opts = unique(opts))
 }
 
 #' Get Package Versions
@@ -300,6 +387,126 @@ track_file <- function(path) {
   return(NULL)
 }
 
+#' Helper: Standardize arguments to ignore variable names and fill defaults
+#' @keywords internal
+.get_canonical_values <- function(fun, call_obj, env) {
+  # 1. Standardize the call (matches args to names, fixes order)
+  matched_call <- match.call(definition = fun, call = call_obj, expand.dots = FALSE)
+
+  # 2. Extract explicit arguments passed by user
+  args_list <- as.list(matched_call)[-1]
+
+  # 3. Identify missing (default) arguments
+  defaults <- formals(fun)
+  missing_args <- setdiff(names(defaults), names(args_list))
+
+  # 4. Handle '...' specifically
+  if ("..." %in% names(args_list)) {
+    args_list[["..."]] <- NULL
+  }
+
+  # 5. Evaluate user-supplied args in the caller's env
+  eval_values <- lapply(args_list, function(expr) {
+    tryCatch(eval(expr, envir = env), error = function(e) expr)
+  })
+
+  # 6. Build a local env with evaluated args for default evaluation
+  #    Parent is the function's own environment (closure) so defaults
+  #    can reference both other args and captured variables.
+  default_env <- list2env(eval_values, parent = environment(fun))
+
+  # 7. Evaluate missing defaults in the local env
+  for (arg in missing_args) {
+    if (arg != "...") {
+      eval_values[[arg]] <- tryCatch(
+        eval(defaults[[arg]], envir = default_env),
+        error = function(e) defaults[[arg]]
+      )
+    }
+  }
+
+  # 8. Sort by name (guard against zero-arg functions)
+  if (length(eval_values) > 0) {
+    eval_values <- eval_values[order(names(eval_values))]
+  }
+  return(eval_values)
+}
+
+#' Helper: Hash ONLY the globals used by the function (Scope Isolation)
+#' @keywords internal
+.get_scoped_env_hash <- function(fun) {
+  if (!requireNamespace("codetools", quietly = TRUE)) {
+    # warning("codetools not installed; falling back to hashing full environment")
+    return(digest::digest(environment(fun)))
+  }
+  
+  used_vars <- codetools::findGlobals(fun, merge = FALSE)$variables
+  env <- environment(fun)
+  captured_globals <- list()
+  
+  for (var in used_vars) {
+    if (exists(var, envir = env, inherits = TRUE)) {
+      val <- get(var, envir = env, inherits = TRUE)
+      if (is.function(val) && !is.null(environment(val))) {
+        pkg_name <- environmentName(environment(val))
+        if (pkg_name == "base" || pkg_name == "package:base") next
+      }
+      captured_globals[[var]] <- val
+    }
+  }
+  return(digest::digest(captured_globals))
+}
+
+#' Helper to hash inputs
+#' @keywords internal
+.hash_inputs <- function(inputs, hash_file_paths, file_pattern = NULL, algo = "xxhash64") {
+  hashed_inputs <- list()
+  for (nm in names(inputs)) {
+    val <- inputs[[nm]]
+    
+    is_file <- FALSE
+    if (is.character(val) && length(val) == 1 && !is.na(val) && (file.exists(val) || dir.exists(val))) {
+      is_file <- TRUE
+    }
+
+    # Check for vector of file paths (length > 1)
+    is_file_vector <- FALSE
+    if (is.character(val) && length(val) > 1) {
+      file_mask <- !is.na(val) & (file.exists(val) | dir.exists(val))
+      if (any(file_mask)) is_file_vector <- TRUE
+    }
+
+    if (is_file) {
+      norm_p <- normalizePath(val, winslash = "/", mustWork = FALSE)
+      if (hash_file_paths) {
+         hashed_inputs[[nm]] <- norm_p
+      } else {
+         hashed_inputs[[nm]] <- .replace_paths_with_hashes(norm_p, file_pattern, algo)
+      }
+    } else if (is_file_vector) {
+      if (hash_file_paths) {
+        hashed_inputs[[nm]] <- vapply(val, function(el) {
+          if (!is.na(el) && (file.exists(el) || dir.exists(el))) {
+            normalizePath(el, winslash = "/", mustWork = FALSE)
+          } else {
+            el
+          }
+        }, character(1))
+      } else {
+        hashed_inputs[[nm]] <- .replace_paths_with_hashes(val, file_pattern, algo)
+      }
+    } else {
+       if (hash_file_paths) {
+         hashed_inputs[[nm]] <- val
+       } else {
+         hashed_inputs[[nm]] <- .replace_paths_with_hashes(val, file_pattern, algo)
+       }
+    }
+  }
+  return(digest::digest(hashed_inputs, algo = algo))
+}
+
+
 # -------------------------------------------------------------------------
 # 4. Main Decorator
 # -------------------------------------------------------------------------
@@ -310,203 +517,176 @@ cacheR_default_dir <- function() {
   getOption("cacheR.dir", default = file.path(tempdir(), "cacheR"))
 }
 
+
 #' Create a caching decorator
 #' @export
-cacheFile <- function(cache_dir     = NULL,
-                      backend       = getOption("cacheR.backend", "rds"),
-                      ignore_args   = NULL,
-                      file_pattern  = NULL,
-                      env_vars      = NULL,
+cacheFile <- function(cache_dir       = NULL,
+                      backend         = getOption("cacheR.backend", "rds"),
+                      ignore_args     = NULL,
+                      file_pattern    = NULL,
+                      env_vars        = NULL,
                       hash_file_paths = TRUE,
-                      algo          = "xxhash64") decorator %@% function(f) {
-  
-  if (is.null(cache_dir)) cache_dir <- cacheR_default_dir()
-  if (!dir.exists(cache_dir)) try(dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE), silent=TRUE)
-  cache_dir <- normalizePath(cache_dir, mustWork = FALSE)
-  backend   <- match.arg(backend, c("rds", "qs"))
-  
-  ast_deps <- .scan_ast_deps(body(f))
-  
-  function(..., .load = TRUE) {
-    invoke_env <- parent.frame()
-    full_call  <- match.call(expand.dots = TRUE)
-    
-    fname_raw <- full_call[[1]]
-    fname     <- "anon"
-    if (is.symbol(fname_raw)) fname <- as.character(fname_raw)
-    else if (is.character(fname_raw)) fname <- fname_raw
-    fname <- gsub("[^a-zA-Z0-9_]", "_", fname)
-    if (nchar(fname) > 50) fname <- substring(fname, 1, 50)
-    
-    # ---------------------------------------------------------- #
-    # 1. Parse Arguments
-    # ---------------------------------------------------------- #
-    call_matched <- match.call(definition = f, expand.dots = TRUE)
-    args_exprs   <- as.list(call_matched)[-1]
-    args_values  <- lapply(args_exprs, function(expr) eval(expr, envir = invoke_env))
-    
-    f_defs <- formals(f); f_defs <- f_defs[names(f_defs) != "..."]
-    eval_env <- new.env(parent = invoke_env)
-    if (!is.null(names(args_values))) {
-       valid <- nzchar(names(args_values))
-       if(any(valid)) list2env(args_values[valid], envir = eval_env)
-    }
-    for (nm in names(f_defs)) {
-      if (!nm %in% names(args_values)) {
-        def_expr <- f_defs[[nm]]
-        if (!is.symbol(def_expr) || as.character(def_expr) != "") {
-           if (!nm %in% names(args_exprs)) args_exprs[[nm]] <- def_expr
-           val <- tryCatch(eval(def_expr, envir = eval_env), error = function(e) NULL)
-           args_values[[nm]] <- val
-           assign(nm, val, envir = eval_env)
-        }
-      }
-    }
-    
-    if (!is.null(ignore_args)) {
-      args_values <- args_values[ !names(args_values) %in% ignore_args ]
-      args_exprs <- args_exprs[ !names(args_exprs) %in% ignore_args ]
-    }
-    if (length(args_values) > 0) {
-      ord <- order(names(args_values))
-      args_values <- args_values[ord]
-      if(length(args_exprs) == length(args_values)) args_exprs <- args_exprs[ord]
-    }
-    
-    # ---------------------------------------------------------- #
-    # 2. Compute Hash
-    # ---------------------------------------------------------- #
-    closure_hash <- .get_recursive_closure_hash(f, algo = algo)
-    
-    args_for_hash <- list()
-    if (length(args_values) > 0) {
-      for (nm in names(args_values)) {
-        val <- args_values[[nm]]
-        expr <- if (nm %in% names(args_exprs)) args_exprs[[nm]] else NULL
-        
-        is_file <- FALSE
-        if (is.character(val) && length(val) == 1 && !is.na(val) && (file.exists(val) || dir.exists(val))) {
-          is_file <- TRUE
-        }
-        
-        if (is_file) {
-          norm_p <- normalizePath(val, winslash = "/", mustWork = FALSE)
-          if (hash_file_paths) {
-             args_for_hash[[nm]] <- norm_p
-          } else {
-             args_for_hash[[nm]] <- .replace_paths_with_hashes(norm_p, file_pattern, algo)
-          }
-        } else {
-          if (hash_file_paths) {
-             args_for_hash[[nm]] <- list(val = val, expr = expr)
-          } else {
-             args_for_hash[[nm]] <- list(val = .replace_paths_with_hashes(val, file_pattern, algo), expr = expr)
-          }
-        }
-      }
-    }
-    
-    dir_states_key <- NULL
-    if (hash_file_paths) {
-      paths_to_hash <- unique(.extract_paths_recursively(args_for_hash))
-      if (length(paths_to_hash) > 0) {
-         local_hasher <- function(p) .get_path_hash(p, file_pattern = file_pattern, algo = algo)
-         dir_hashes <- vapply(paths_to_hash, local_hasher, character(1L))
-         dir_states_key <- dir_hashes[order(names(dir_hashes))]
-      }
-    }
-    
-    pkg_versions <- .get_pkg_versions(ast_deps$pkgs)
-    current_envs <- if (!is.null(env_vars)) as.list(Sys.getenv(sort(env_vars), unset = NA)) else NULL
-    current_opts <- if (length(ast_deps$opts) > 0) options()[ast_deps$opts] else NULL
-    if (!is.null(current_opts)) current_opts <- current_opts[order(names(current_opts))]
-    
-    hashlist <- list(
-      closure = closure_hash, pkgs = pkg_versions, envs = current_envs, 
-      opts = current_opts, args = args_for_hash, dir_states = dir_states_key
-    )
-    
-    args_hash <- digest::digest(hashlist, algo = algo)
-    outfile   <- file.path(cache_dir, paste(fname, args_hash, backend, sep = "."))
-    
-    # ---------------------------------------------------------- #
-    # 3. Register Graph Node & Stack
-    # ---------------------------------------------------------- #
-    # Uses static function name for Targets compatibility
-    node_id <- fname 
-    
-    .register_node(node_id, "function", label = fname, code = paste(deparse(full_call), collapse=" "))
-    
-    if (length(.graph_cache$call_stack) > 0) {
-      parent_id <- tail(.graph_cache$call_stack, 1)
-      .register_edge(from = parent_id, to = node_id)
-    }
-    
-    .graph_cache$call_stack <- c(.graph_cache$call_stack, node_id)
-    on.exit(.graph_cache$call_stack <- head(.graph_cache$call_stack, -1), add = TRUE)
-    
-    # 4. Detect Input Files (AND TRACK THEM IN GRAPH)
-    input_paths <- unique(.extract_paths_recursively(args_values))
-    for (p in input_paths) track_file(p) 
+                      algo            = "xxhash64") decorator %@% function(f) {
 
-    # D. Hooks
-    if (exists(".cacheTree_register_node", mode = "function")) .cacheTree_register_node(node_id, fname, args_hash, outfile)
-
-    # E. Load
-    if (.load && file.exists(outfile)) {
-      cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
-      if (!is.null(cached_obj)) {
-        if (is.list(cached_obj) && "value" %in% names(cached_obj)) return(cached_obj$value)
-        return(cached_obj)
+  force(f)
+    if (is.null(cache_dir)) cache_dir <- cacheR_default_dir()
+    if (!dir.exists(cache_dir)) try(dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE), silent=TRUE)
+    cache_dir <- normalizePath(cache_dir, mustWork = FALSE)
+    backend   <- match.arg(backend, c("rds", "qs"))
+    
+    # Sync Graph from disk on init
+    cacheTree_sync(cache_dir)
+    ast_deps <- .scan_ast_deps(body(f))
+    
+    # The actual wrapped function
+    wrapper <- function(..., .load = TRUE) {
+      # --- 1. CAPTURE & CANONICALIZE ARGUMENTS ---
+      
+      # A. Get the definition-based args (Standard args + Defaults)
+      # We pass sys.call() to get the exact expression used to call this wrapper
+      # parent.frame() is where the arguments (like 'x') exist.
+      canon_args <- .get_canonical_values(f, sys.call(), parent.frame())
+      
+      # B. Handle Dots (...) Explicitly
+      # .get_canonical_values strips '...' because they are hard to eval from call.
+      # But inside this wrapper, 'list(...)' works perfectly.
+      dots_values <- list(...)
+      
+      # Combine them: Named Defaults + Explicit Dots
+      # This represents the "True Data" passed to the function.
+      input_values <- c(canon_args, dots_values)
+      
+      if (!is.null(ignore_args)) {
+        input_values <- input_values[ !names(input_values) %in% ignore_args ]
       }
-    }
-    
-    # F. Miss & Guard (Warning Only)
-    paths_to_monitor <- unique(.extract_paths_recursively(args_values))
-    file_snapshots <- character()
-    if (length(paths_to_monitor) > 0) {
-       infos <- file.info(paths_to_monitor)
-       file_snapshots <- paste(infos$size, unclass(infos$mtime))
-       names(file_snapshots) <- paths_to_monitor
-    }
-    
-    dat <- f(...)
-    
-    if (length(paths_to_monitor) > 0) {
-       new_infos <- file.info(paths_to_monitor)
-       new_snapshots <- paste(new_infos$size, unclass(new_infos$mtime))
-       changed_files <- paths_to_monitor[file_snapshots != new_snapshots]
-       if (length(changed_files) > 0) {
-         warning(sprintf("cacheR: [WARNING] Function modified argument files during execution: %s.", paste(basename(changed_files), collapse=", ")))
-       }
-    }
-    
-    # G. Save
-    full_meta <- c(hashlist, list(
-       fname = fname, 
-       args_hash = args_hash, 
-       created = Sys.time(),
-       cache_file = normalizePath(outfile, winslash = "/", mustWork = FALSE),
-       cache_dir  = normalizePath(cache_dir, winslash = "/", mustWork = FALSE),
-       args_values = args_values,
-       args_exprs = args_exprs
-    ))
-    do_save <- function() .atomic_save(list(value=dat, meta=full_meta), outfile, backend)
-    
-    if (requireNamespace("filelock", quietly = TRUE)) {
-      lock <- tryCatch(filelock::lock(paste0(outfile, ".lock"), timeout = 5000), error = function(e) NULL)
-      if (!is.null(lock)) {
-        on.exit(filelock::unlock(lock), add = TRUE)
-        if (.load && file.exists(outfile)) {
-           cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
-           if (!is.null(cached_obj)) return(if(is.list(cached_obj) && "value" %in% names(cached_obj)) cached_obj$value else cached_obj)
+
+      # C. Hash Inputs (Ignoring variable names, respecting content)
+      input_hash <- .hash_inputs(input_values, hash_file_paths, file_pattern, algo)
+      
+      # --- 2. STATIC ANALYSIS (ENVIRONMENT & OPS) ---
+      env_hash <- .get_scoped_env_hash(f)
+      
+      pkg_versions <- .get_pkg_versions(ast_deps$pkgs)
+      current_envs <- if (!is.null(env_vars)) as.list(Sys.getenv(sort(env_vars), unset = NA)) else NULL
+      current_opts <- if (length(ast_deps$opts) > 0) options()[ast_deps$opts] else NULL
+      if (!is.null(current_opts)) current_opts <- current_opts[order(names(current_opts))]
+      
+      dir_states_key <- NULL
+      if (hash_file_paths) {
+        paths_to_hash <- unique(.extract_paths_recursively(input_values))
+        if (length(paths_to_hash) > 0) {
+           local_hasher <- function(p) .get_path_hash(p, file_pattern = file_pattern, algo = algo)
+           dir_hashes <- vapply(paths_to_hash, local_hasher, character(1L))
+           dir_states_key <- dir_hashes[order(names(dir_hashes))]
         }
-        do_save()
+      }
+
+      # --- 3. COMPUTE FINAL KEY ---
+      body_hash <- digest::digest(body(f), algo = algo)
+      
+      hashlist <- list(
+        input_hash = input_hash, 
+        env_hash = env_hash, 
+        body_hash = body_hash,
+        pkgs = pkg_versions,
+        sys_envs = current_envs,
+        sys_opts = current_opts,
+        dir_states = dir_states_key
+      )
+      
+      master_key <- digest::digest(hashlist, algo = algo)
+      
+      # Determine Filename
+      fname_raw <- tryCatch(as.character(sys.call()[[1]]), error = function(e) "anon")
+      if (length(fname_raw) > 1) fname_raw <- "anon" # handle complex calls
+      fname <- gsub("[^a-zA-Z0-9_]", "_", fname_raw)
+      if (nchar(fname) > 50) fname <- substring(fname, 1, 50)
+      
+      outfile <- file.path(cache_dir, paste(fname, master_key, backend, sep = "."))
+      
+      # --- 4. PERSISTENCE LAYER ---
+      
+      # Register Graph Node
+      node_id <- paste(fname, master_key, sep = "_")
+      .register_node(node_id, "function", label = fname, code = paste(deparse(sys.call()), collapse=" "), cache_dir = cache_dir)
+      
+      if (length(.graph_cache$call_stack) > 0) {
+        parent_id <- tail(.graph_cache$call_stack, 1)
+        .register_edge(from = parent_id, to = node_id, cache_dir = cache_dir)
+      }
+      
+      .graph_cache$call_stack <- c(.graph_cache$call_stack, node_id)
+      on.exit(.graph_cache$call_stack <- head(.graph_cache$call_stack, -1), add = TRUE)
+      
+      # Track Input Files
+      input_paths <- unique(.extract_paths_recursively(input_values))
+      for (p in input_paths) track_file(p, cache_dir = cache_dir) 
+
+      # Hook
+      if (exists(".cacheTree_register_node", mode = "function")) .cacheTree_register_node(node_id, fname, master_key, outfile)
+      
+      # --- 5. CHECK CACHE ---
+      if (.load && file.exists(outfile)) {
+        cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
+        if (!is.null(cached_obj)) {
+          if (is.list(cached_obj) && "value" %in% names(cached_obj)) return(cached_obj$value)
+          return(cached_obj)
+        }
+      }
+      
+      # --- 6. EXECUTE (MISS) ---
+      
+      # Setup file monitoring for warning
+      paths_to_monitor <- input_paths
+      file_snapshots <- character()
+      if (length(paths_to_monitor) > 0) {
+         infos <- file.info(paths_to_monitor)
+         file_snapshots <- paste(infos$size, unclass(infos$mtime))
+         names(file_snapshots) <- paths_to_monitor
+      }
+      
+      # RUN FUNCTION
+      dat <- f(...)
+      
+      # Check for file side-effects
+      if (length(paths_to_monitor) > 0) {
+         new_infos <- file.info(paths_to_monitor)
+         new_snapshots <- paste(new_infos$size, unclass(new_infos$mtime))
+         changed_files <- paths_to_monitor[file_snapshots != new_snapshots]
+         if (length(changed_files) > 0) {
+           warning(sprintf("cacheR: [WARNING] Function modified argument files during execution: %s.", paste(basename(changed_files), collapse=", ")))
+         }
+      }
+      
+      # --- 7. SAVE RESULT ---
+      full_meta <- c(hashlist, list(
+         fname = fname, 
+         args_hash = master_key, 
+         created = Sys.time(),
+         cache_file = normalizePath(outfile, winslash = "/", mustWork = FALSE),
+         cache_dir  = normalizePath(cache_dir, winslash = "/", mustWork = FALSE),
+         args_values = input_values
+      ))
+      
+      do_save <- function() .atomic_save(list(value=dat, meta=full_meta), outfile, backend)
+      
+      if (requireNamespace("filelock", quietly = TRUE)) {
+        lock <- tryCatch(filelock::lock(paste0(outfile, ".lock"), timeout = 5000), error = function(e) NULL)
+        if (!is.null(lock)) {
+          on.exit(filelock::unlock(lock), add = TRUE)
+          # Double check if someone else wrote it while we waited
+          if (.load && file.exists(outfile)) {
+             cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
+             if (!is.null(cached_obj)) return(if(is.list(cached_obj) && "value" %in% names(cached_obj)) cached_obj$value else cached_obj)
+          }
+          do_save()
+        } else { do_save() }
       } else { do_save() }
-    } else { do_save() }
+      
+      dat
+    }
     
-    dat
-  }
+    return(wrapper)
 }
 
 # -------------------------------------------------------------------------
@@ -568,7 +748,10 @@ export_targets_file <- function(path = "_targets.R") {
     if (backend == "qs") { if (!requireNamespace("qs", quietly=TRUE)) stop("qs required"); qs::qsave(object, tmp_path) } 
     else { saveRDS(object, tmp_path) }
     file.rename(tmp_path, path)
-  }, error = function(e) { if(file.exists(tmp_path)) unlink(tmp_path) })
+  }, error = function(e) {
+    if(file.exists(tmp_path)) unlink(tmp_path)
+    warning(sprintf("cacheR: failed to save cache file '%s': %s", basename(path), conditionMessage(e)), call. = FALSE)
+  })
 }
 .safe_load <- function(path, backend) {
   if (backend == "qs") { if (!requireNamespace("qs", quietly=TRUE)) stop("qs required"); qs::qread(path) } 
