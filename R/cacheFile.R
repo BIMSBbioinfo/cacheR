@@ -130,6 +130,35 @@ cacheTree_nodes <- function() {
   }
 }
 
+#' Remove a graph node and its edges (cleanup on error)
+#' @keywords internal
+.remove_graph_node <- function(node_id, cache_dir) {
+  # Remove node from memory
+  if (exists(node_id, envir = .graph_cache$nodes)) {
+    rm(list = node_id, envir = .graph_cache$nodes)
+  }
+  # Remove edges referencing this node from memory
+  edge_ids <- ls(.graph_cache$edges)
+  for (eid in edge_ids) {
+    edge <- get(eid, envir = .graph_cache$edges)
+    if (edge$from == node_id || edge$to == node_id) {
+      rm(list = eid, envir = .graph_cache$edges)
+    }
+  }
+  # Remove from disk
+  if (!is.null(cache_dir)) {
+    graph_file <- file.path(cache_dir, "graph.rds")
+    if (file.exists(graph_file)) {
+      g <- tryCatch(readRDS(graph_file), error = function(e) NULL)
+      if (!is.null(g)) {
+        g$nodes <- Filter(function(n) n$id != node_id, g$nodes)
+        g$edges <- Filter(function(e) e$from != node_id && e$to != node_id, g$edges)
+        saveRDS(g, graph_file)
+      }
+    }
+  }
+}
+
 #' Find nodes associated with a specific file path
 #' @export
 cacheTree_for_file <- function(path) {
@@ -683,7 +712,13 @@ cacheFile <- function(cache_dir       = NULL,
       }
       
       # RUN FUNCTION (capture visibility for invisible() preservation)
-      dat_vis <- withVisible(f(...))
+      dat_vis <- tryCatch(
+        withVisible(f(...)),
+        error = function(e) {
+          .remove_graph_node(node_id, cache_dir)
+          stop(e)
+        }
+      )
       dat <- dat_vis$value
       dat_invisible <- !dat_vis$visible
 
@@ -744,17 +779,60 @@ cacheFile <- function(cache_dir       = NULL,
 #' @export
 cachePrune <- function(cache_dir, days_old = 30) {
   if (!dir.exists(cache_dir)) return(invisible(NULL))
-  files <- list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE)
-  if (length(files) == 0) return(invisible(NULL))
-  
-  infos <- file.info(files)
-  cutoff <- Sys.time() - (days_old * 24 * 60 * 60)
-  
-  to_delete <- files[infos$mtime < cutoff]
-  if (length(to_delete) > 0) {
-    unlink(to_delete)
-    message(sprintf("Pruned %d files older than %d days.", length(to_delete), days_old))
+
+  # Prune old cache files
+  cache_files <- list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE)
+  if (length(cache_files) > 0) {
+    infos <- file.info(cache_files)
+    cutoff <- Sys.time() - (days_old * 24 * 60 * 60)
+    to_delete <- cache_files[infos$mtime < cutoff]
+    if (length(to_delete) > 0) {
+      unlink(to_delete)
+      message(sprintf("Pruned %d cache files older than %d days.", length(to_delete), days_old))
+    }
   }
+
+  # Always clean up stale lock files and temp files
+  lock_files <- list.files(cache_dir, pattern = "\\.lock$", full.names = TRUE)
+  tmp_files <- list.files(cache_dir, pattern = "\\.tmp\\.", full.names = TRUE)
+  stale <- c(lock_files, tmp_files)
+  if (length(stale) > 0) {
+    unlink(stale)
+    message(sprintf("Removed %d stale lock/temp files.", length(stale)))
+  }
+
+  invisible(NULL)
+}
+
+#' Get info about the in-memory file state cache
+#'
+#' Returns the number of cached file fingerprints and the file paths tracked.
+#' The file state cache avoids redundant re-hashing of unchanged files within
+#' the same R session, but grows unbounded. Use \code{cache_file_state_clear()}
+#' to free memory.
+#'
+#' @return A list with \code{n_entries} (integer) and \code{paths} (character vector).
+#' @export
+cache_file_state_info <- function() {
+  entries <- ls(.file_state_cache)
+  list(
+    n_entries = length(entries),
+    paths = entries
+  )
+}
+
+#' Clear the in-memory file state cache
+#'
+#' Removes all cached file fingerprints and hashes. Subsequent file hash
+#' lookups will re-read file metadata and recompute hashes.
+#'
+#' @return Invisible integer: number of entries cleared.
+#' @export
+cache_file_state_clear <- function() {
+  n <- length(ls(.file_state_cache))
+  rm(list = ls(.file_state_cache), envir = .file_state_cache)
+  message(sprintf("Cleared %d entries from file state cache.", n))
+  invisible(n)
 }
 
 #' Export to targets

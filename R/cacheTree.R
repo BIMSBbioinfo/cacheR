@@ -78,19 +78,31 @@ cacheR_default_dir <- function() {
 #' @param days_old Delete files not accessed/modified in X days
 #' @export
 cachePrune <- function(cache_dir = cacheR_default_dir(), days_old = 30) {
-  files <- list.files(cache_dir, full.names = TRUE, pattern = "\\.(rds|qs)$")
-  if (length(files) == 0) return(invisible())
-  
-  info <- file.info(files)
-  now <- Sys.time()
-  age <- difftime(now, info$mtime, units = "days")
-  
-  to_delete <- files[age > days_old]
-  
-  if (length(to_delete) > 0) {
-    message(sprintf("Deleting %d old cache files...", length(to_delete)))
-    unlink(to_delete)
+  if (!dir.exists(cache_dir)) return(invisible(NULL))
+
+  # Prune old cache files
+  cache_files <- list.files(cache_dir, full.names = TRUE, pattern = "\\.(rds|qs)$")
+  if (length(cache_files) > 0) {
+    info <- file.info(cache_files)
+    now <- Sys.time()
+    age <- difftime(now, info$mtime, units = "days")
+    to_delete <- cache_files[age > days_old]
+    if (length(to_delete) > 0) {
+      message(sprintf("Pruned %d cache files older than %d days.", length(to_delete), days_old))
+      unlink(to_delete)
+    }
   }
+
+  # Always clean up stale lock files and temp files
+  lock_files <- list.files(cache_dir, pattern = "\\.lock$", full.names = TRUE)
+  tmp_files <- list.files(cache_dir, pattern = "\\.tmp\\.", full.names = TRUE)
+  stale <- c(lock_files, tmp_files)
+  if (length(stale) > 0) {
+    unlink(stale)
+    message(sprintf("Removed %d stale lock/temp files.", length(stale)))
+  }
+
+  invisible(NULL)
 }
 
 # -------------------------------------------------------------------------

@@ -1244,3 +1244,169 @@ describe("File path detection in R objects", {
     expect_length(paths, 0)
   })
 })
+
+# =========================================================================
+# Issue #8: Functions that error leave dangling graph nodes
+# =========================================================================
+
+describe("Graph node cleanup on function error (#8)", {
+
+  it("removes graph node from disk when function errors", {
+    cache_dir <- file.path(tempdir(), paste0("err_graph_", as.integer(Sys.time())))
+    dir.create(cache_dir, recursive = TRUE)
+    on.exit(unlink(cache_dir, recursive = TRUE), add = TRUE)
+
+    cacheR::cacheTree_reset()
+
+    f <- function(x) stop("intentional error")
+    cached_f <- cacheFile(cache_dir, backend = "rds") %@% f
+
+    expect_error(cached_f(1), "intentional error")
+
+    # graph.rds should have no nodes for this function
+    graph_file <- file.path(cache_dir, "graph.rds")
+    if (file.exists(graph_file)) {
+      g <- readRDS(graph_file)
+      expect_length(g$nodes, 0)
+    }
+  })
+
+  it("removes graph node from memory when function errors", {
+    cache_dir <- file.path(tempdir(), paste0("err_mem_", as.integer(Sys.time())))
+    dir.create(cache_dir, recursive = TRUE)
+    on.exit(unlink(cache_dir, recursive = TRUE), add = TRUE)
+
+    cacheR::cacheTree_reset()
+
+    f <- function(x) stop("boom")
+    cached_f <- cacheFile(cache_dir, backend = "rds") %@% f
+
+    expect_error(cached_f(42), "boom")
+
+    nodes <- cacheR::cacheTree_nodes()
+    expect_length(nodes, 0)
+  })
+
+  it("preserves graph node when function succeeds", {
+    cache_dir <- file.path(tempdir(), paste0("ok_graph_", as.integer(Sys.time())))
+    dir.create(cache_dir, recursive = TRUE)
+    on.exit(unlink(cache_dir, recursive = TRUE), add = TRUE)
+
+    cacheR::cacheTree_reset()
+
+    f <- function(x) x + 1
+    cached_f <- cacheFile(cache_dir, backend = "rds") %@% f
+
+    res <- cached_f(5)
+    expect_equal(res, 6)
+
+    nodes <- cacheR::cacheTree_nodes()
+    expect_true(length(nodes) > 0)
+
+    graph_file <- file.path(cache_dir, "graph.rds")
+    expect_true(file.exists(graph_file))
+    g <- readRDS(graph_file)
+    expect_true(length(g$nodes) > 0)
+  })
+})
+
+# =========================================================================
+# Issue #9: Lock files and temp files accumulate indefinitely
+# =========================================================================
+
+describe("cachePrune cleans lock and temp files (#9)", {
+
+  it("removes .lock and .tmp files", {
+    cache_dir <- file.path(tempdir(), paste0("prune_lock_", as.integer(Sys.time())))
+    dir.create(cache_dir, recursive = TRUE)
+    on.exit(unlink(cache_dir, recursive = TRUE), add = TRUE)
+
+    # Create fake lock and tmp files
+    writeLines("", file.path(cache_dir, "graph.rds.lock"))
+    writeLines("", file.path(cache_dir, "func.abc123.rds.lock"))
+    writeLines("", file.path(cache_dir, "func.abc123.rds.tmp.x7k2m9pq"))
+
+    lock_before <- list.files(cache_dir, pattern = "\\.lock$")
+    tmp_before <- list.files(cache_dir, pattern = "\\.tmp\\.")
+    expect_equal(length(lock_before), 2)
+    expect_equal(length(tmp_before), 1)
+
+    suppressMessages(cachePrune(cache_dir, days_old = 9999))
+
+    lock_after <- list.files(cache_dir, pattern = "\\.lock$")
+    tmp_after <- list.files(cache_dir, pattern = "\\.tmp\\.")
+    expect_length(lock_after, 0)
+    expect_length(tmp_after, 0)
+  })
+
+  it("does not prune recent cache files", {
+    cache_dir <- file.path(tempdir(), paste0("prune_keep_", as.integer(Sys.time())))
+    dir.create(cache_dir, recursive = TRUE)
+    on.exit(unlink(cache_dir, recursive = TRUE), add = TRUE)
+
+    # Create a fresh cache file
+    saveRDS(list(value = 1), file.path(cache_dir, "func.abc.rds"))
+
+    suppressMessages(cachePrune(cache_dir, days_old = 30))
+
+    files <- list.files(cache_dir, pattern = "\\.rds$")
+    expect_true("func.abc.rds" %in% files)
+  })
+})
+
+# =========================================================================
+# Issue #10: .file_state_cache management functions
+# =========================================================================
+
+describe("File state cache management (#10)", {
+
+  it("cache_file_state_info reports cached entries", {
+    # Clear first
+    suppressMessages(cache_file_state_clear())
+    info0 <- cache_file_state_info()
+    expect_equal(info0$n_entries, 0)
+
+    # Hash a file to populate the cache
+    tmp <- tempfile(fileext = ".txt")
+    writeLines("test content", tmp)
+    on.exit(unlink(tmp), add = TRUE)
+
+    cacheR:::.fast_file_hash(tmp)
+
+    info1 <- cache_file_state_info()
+    expect_true(info1$n_entries >= 1)
+    expect_true(normalizePath(tmp, winslash = "/", mustWork = FALSE) %in% info1$paths)
+  })
+
+  it("cache_file_state_clear empties the cache", {
+    # Ensure something is cached
+    tmp <- tempfile(fileext = ".txt")
+    writeLines("data", tmp)
+    on.exit(unlink(tmp), add = TRUE)
+    cacheR:::.fast_file_hash(tmp)
+
+    info_before <- cache_file_state_info()
+    expect_true(info_before$n_entries >= 1)
+
+    n <- suppressMessages(cache_file_state_clear())
+    expect_true(n >= 1)
+
+    info_after <- cache_file_state_info()
+    expect_equal(info_after$n_entries, 0)
+  })
+
+  it("re-hashing works after clearing file state cache", {
+    tmp <- tempfile(fileext = ".txt")
+    writeLines("original", tmp)
+    on.exit(unlink(tmp), add = TRUE)
+
+    hash1 <- cacheR:::.fast_file_hash(tmp)
+    suppressMessages(cache_file_state_clear())
+
+    # Modify the file
+    writeLines("modified", tmp)
+    hash2 <- cacheR:::.fast_file_hash(tmp)
+
+    expect_false(identical(hash1, hash2))
+  })
+})
