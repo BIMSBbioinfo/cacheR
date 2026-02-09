@@ -629,7 +629,10 @@ cacheFile <- function(cache_dir       = NULL,
       if (.load && file.exists(outfile)) {
         cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
         if (!is.null(cached_obj)) {
-          if (is.list(cached_obj) && "value" %in% names(cached_obj)) return(cached_obj$value)
+          if (is.list(cached_obj) && "value" %in% names(cached_obj)) {
+            if (isTRUE(cached_obj$invisible)) return(invisible(cached_obj$value))
+            return(cached_obj$value)
+          }
           return(cached_obj)
         }
       }
@@ -645,9 +648,11 @@ cacheFile <- function(cache_dir       = NULL,
          names(file_snapshots) <- paths_to_monitor
       }
       
-      # RUN FUNCTION
-      dat <- f(...)
-      
+      # RUN FUNCTION (capture visibility for invisible() preservation)
+      dat_vis <- withVisible(f(...))
+      dat <- dat_vis$value
+      dat_invisible <- !dat_vis$visible
+
       # Check for file side-effects
       if (length(paths_to_monitor) > 0) {
          new_infos <- file.info(paths_to_monitor)
@@ -668,7 +673,9 @@ cacheFile <- function(cache_dir       = NULL,
          args_values = input_values
       ))
       
-      do_save <- function() .atomic_save(list(value=dat, meta=full_meta), outfile, backend)
+      save_obj <- list(value=dat, meta=full_meta)
+      if (dat_invisible) save_obj$invisible <- TRUE
+      do_save <- function() .atomic_save(save_obj, outfile, backend)
       
       if (requireNamespace("filelock", quietly = TRUE)) {
         lock <- tryCatch(filelock::lock(paste0(outfile, ".lock"), timeout = 5000), error = function(e) NULL)
@@ -677,13 +684,19 @@ cacheFile <- function(cache_dir       = NULL,
           # Double check if someone else wrote it while we waited
           if (.load && file.exists(outfile)) {
              cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
-             if (!is.null(cached_obj)) return(if(is.list(cached_obj) && "value" %in% names(cached_obj)) cached_obj$value else cached_obj)
+             if (!is.null(cached_obj)) {
+               if (is.list(cached_obj) && "value" %in% names(cached_obj)) {
+                 if (isTRUE(cached_obj$invisible)) return(invisible(cached_obj$value))
+                 return(cached_obj$value)
+               }
+               return(cached_obj)
+             }
           }
           do_save()
         } else { do_save() }
       } else { do_save() }
-      
-      dat
+
+      if (dat_invisible) invisible(dat) else dat
     }
     
     return(wrapper)
