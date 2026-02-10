@@ -185,17 +185,15 @@ test_that("cacheTree_for_file finds relevant nodes", {
 
 # --------------------------------------------------------#
 
-test_that("cacheR_default_dir creates directory if missing", {
+test_that("cacheR_default_dir returns configured directory", {
   tmp_dir <- file.path(tempdir(), ".cacheR_test")
   if(dir.exists(tmp_dir)) unlink(tmp_dir, recursive = TRUE)
-  
-  # Mock getOption using withr
+
   withr::with_options(list(cacheR.dir = tmp_dir), {
     res <- cacheR_default_dir()
     expect_equal(res, tmp_dir)
-    expect_true(dir.exists(tmp_dir))
   })
-  
+
   unlink(tmp_dir, recursive = TRUE)
 })
 

@@ -10,6 +10,10 @@
 #' @keywords internal
 .file_state_cache <- new.env(parent = emptyenv())
 
+#' Maximum entries in .file_state_cache before eviction
+#' @keywords internal
+.file_state_cache_limit <- 10000L
+
 #' Execution Graph Cache
 #' @keywords internal
 .graph_cache <- new.env(parent = emptyenv())
@@ -164,6 +168,7 @@ cacheTree_nodes <- function() {
 cacheTree_for_file <- function(path) {
   path <- normalizePath(path, mustWork = FALSE, winslash = "/")
   all_nodes <- cacheTree_nodes()
+  if (is.environment(all_nodes)) all_nodes <- as.list(all_nodes)
   Filter(function(x) path %in% x$files, all_nodes)
 }
 
@@ -189,6 +194,26 @@ cacheTree_sync <- function(cache_dir) {
       }
     }
   }
+}
+
+#' Save the execution graph to disk
+#' @param path File path to save to
+#' @export
+cacheTree_save <- function(path) {
+  saveRDS(list(nodes = .graph_cache$nodes, edges = .graph_cache$edges), path)
+  invisible(path)
+}
+
+#' Load an execution graph from disk
+#' @param path File path to load from
+#' @export
+cacheTree_load <- function(path) {
+  data <- readRDS(path)
+  if (!all(c("nodes", "edges") %in% names(data))) stop("Invalid graph file")
+  .graph_cache$nodes <- data$nodes
+  .graph_cache$edges <- data$edges
+  .graph_cache$call_stack <- character()
+  invisible(TRUE)
 }
 
 #' Explicitly Track a File Dependency
@@ -234,7 +259,6 @@ track_file <- function(path, cache_dir = NULL) {
 
 #' Probabilistic File Hashing
 #' @keywords internal
-#' @export
 .probabilistic_file_hash <- function(path, block_size = 64 * 1024, n_blocks = 5,
                                       algo = "xxhash64", full_hash_limit = 5 * 1024 * 1024) {
   path <- normalizePath(path, mustWork = FALSE)
@@ -274,7 +298,6 @@ track_file <- function(path, cache_dir = NULL) {
 
 #' Fast File Hash
 #' @keywords internal
-#' @export
 .fast_file_hash <- function(path, algo = "xxhash64") {
   path <- normalizePath(path, mustWork = FALSE, winslash = "/")
   if (dir.exists(path)) return(digest::digest("directory_placeholder", algo=algo))
@@ -288,6 +311,12 @@ track_file <- function(path, cache_dir = NULL) {
   if (!is.null(prev) && identical(prev$fp, fp)) return(prev$hash)
   
   h <- .probabilistic_file_hash(path, algo = algo)
+
+  # Evict all entries if cache exceeds limit
+  if (length(ls(.file_state_cache)) >= .file_state_cache_limit) {
+    rm(list = ls(.file_state_cache), envir = .file_state_cache)
+  }
+
   assign(path, list(fp = fp, hash = h), envir = .file_state_cache)
   h
 }
@@ -577,7 +606,7 @@ track_file <- function(path, cache_dir = NULL) {
 #' Default Cache Directory
 #' @export
 cacheR_default_dir <- function() {
-  getOption("cacheR.dir", default = file.path(tempdir(), "cacheR"))
+  getOption("cacheR.dir", default = file.path(getwd(), ".cacheR"))
 }
 
 
