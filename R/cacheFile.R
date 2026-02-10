@@ -54,7 +54,11 @@ cacheTree_nodes <- function() {
   # Try to acquire lock
   if (requireNamespace("filelock", quietly = TRUE)) {
     lock <- tryCatch(filelock::lock(lock_file, timeout = 5000), error = function(e) NULL)
-    if (!is.null(lock)) on.exit(filelock::unlock(lock), add = TRUE)
+    if (!is.null(lock)) {
+      on.exit(filelock::unlock(lock), add = TRUE)
+    } else {
+      warning("cacheR: could not acquire graph lock; proceeding without lock", call. = FALSE)
+    }
   }
   
   # Load existing
@@ -622,10 +626,17 @@ cacheFile <- function(cache_dir       = NULL,
 
   force(f)
     if (is.null(cache_dir)) cache_dir <- cacheR_default_dir()
-    if (!dir.exists(cache_dir)) try(dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE), silent=TRUE)
+    if (!dir.exists(cache_dir)) {
+      created <- dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+      if (!created) warning("cacheR: could not create cache directory: ", cache_dir, call. = FALSE)
+    }
+    if (dir.exists(cache_dir) && file.access(cache_dir, mode = 2) != 0) {
+      warning("cacheR: cache directory is not writable: ", cache_dir, call. = FALSE)
+    }
     cache_dir <- normalizePath(cache_dir, mustWork = FALSE)
     backend   <- match.arg(backend, c("rds", "qs"))
-    
+    if (is.null(env_vars)) env_vars <- getOption("cacheR.env_vars", NULL)
+
     # Sync Graph from disk on init
     cacheTree_sync(cache_dir)
     ast_deps <- .scan_ast_deps(body(f))
@@ -719,7 +730,10 @@ cacheFile <- function(cache_dir       = NULL,
       
       # --- 5. CHECK CACHE ---
       if (.load && file.exists(outfile)) {
-        cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
+        cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) {
+          warning(sprintf("cacheR: cache file unreadable (re-executing): %s", conditionMessage(e)), call. = FALSE)
+          NULL
+        })
         if (!is.null(cached_obj)) {
           if (is.list(cached_obj) && "value" %in% names(cached_obj)) {
             if (isTRUE(cached_obj$invisible)) return(invisible(cached_obj$value))
@@ -729,6 +743,34 @@ cacheFile <- function(cache_dir       = NULL,
         }
       }
       
+      # --- VERBOSE MISS REPORTING ---
+      if (isTRUE(getOption("cacheR.verbose"))) {
+        existing <- list.files(cache_dir,
+          pattern = paste0("^", fname, "\\..*\\.", backend, "$"),
+          full.names = TRUE)
+        if (length(existing) > 0) {
+          newest <- existing[which.max(file.mtime(existing))]
+          stored <- tryCatch(.safe_load(newest, backend), error = function(e) NULL)
+          if (!is.null(stored) && is.list(stored) && "meta" %in% names(stored)) {
+            sm <- stored$meta
+            changes <- character()
+            if (!identical(sm$body_hash, body_hash))    changes <- c(changes, "function body")
+            if (!identical(sm$input_hash, input_hash))  changes <- c(changes, "arguments")
+            if (!identical(sm$env_hash, env_hash))      changes <- c(changes, "environment/globals")
+            if (!identical(sm$pkgs, pkg_versions))       changes <- c(changes, "package versions")
+            if (!identical(sm$sys_envs, current_envs))   changes <- c(changes, "environment variables")
+            if (!identical(sm$sys_opts, current_opts))   changes <- c(changes, "R options")
+            if (!identical(sm$dir_states, dir_states_key)) changes <- c(changes, "file/directory contents")
+            if (length(changes) == 0) changes <- "unknown (possibly new argument combination)"
+            message(sprintf("cacheR: miss for %s() -- changed: %s", fname, paste(changes, collapse = ", ")))
+          } else {
+            message(sprintf("cacheR: miss for %s() -- previous entry unreadable", fname))
+          }
+        } else {
+          message(sprintf("cacheR: miss for %s() -- first execution", fname))
+        }
+      }
+
       # --- 6. EXECUTE (MISS) ---
       
       # Setup file monitoring for warning
@@ -779,7 +821,7 @@ cacheFile <- function(cache_dir       = NULL,
         lock <- tryCatch(filelock::lock(paste0(outfile, ".lock"), timeout = 5000), error = function(e) NULL)
         if (!is.null(lock)) {
           on.exit(filelock::unlock(lock), add = TRUE)
-          # Double check if someone else wrote it while we waited
+          # Double-check if someone else wrote it while we waited
           if (.load && file.exists(outfile)) {
              cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
              if (!is.null(cached_obj)) {
@@ -791,7 +833,10 @@ cacheFile <- function(cache_dir       = NULL,
              }
           }
           do_save()
-        } else { do_save() }
+        } else {
+          warning("cacheR: could not acquire save lock; saving without lock", call. = FALSE)
+          do_save()
+        }
       } else { do_save() }
 
       if (dat_invisible) invisible(dat) else dat
