@@ -31,7 +31,9 @@ Suggests:
     rmarkdown,
     callr,
     DBI,
-    RSQLite
+    RSQLite,
+    withr,
+    yaml
 Config/testthat/edition: 3
 LazyData: true
 VignetteBuilder: knitr
