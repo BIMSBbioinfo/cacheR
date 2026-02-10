@@ -809,8 +809,44 @@ cacheFile <- function(cache_dir       = NULL,
         }
       }
 
+      # --- PARALLEL WAIT (sentinel check) ---
+      sentinel <- paste0(outfile, ".computing")
+
+      if (!.force && file.exists(sentinel)) {
+        sentinel_info <- file.info(sentinel)
+        sentinel_age <- as.numeric(difftime(Sys.time(), sentinel_info$mtime, units = "secs"))
+        # Only wait if sentinel is fresh (< 1 hour); stale sentinels are ignored
+        if (!is.na(sentinel_age) && sentinel_age < 3600) {
+          wait_timeout <- getOption("cacheR.wait_timeout", 600)
+          poll_interval <- getOption("cacheR.poll_interval", 2)
+          waited <- 0
+          while (waited < wait_timeout) {
+            Sys.sleep(poll_interval)
+            waited <- waited + poll_interval
+            if (file.exists(outfile)) {
+              cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
+              if (!is.null(cached_obj)) {
+                if (isTRUE(getOption("cacheR.verbose")))
+                  message(sprintf("cacheR: %s() loaded from parallel worker after %.0fs wait", fname, waited))
+                if (is.list(cached_obj) && "value" %in% names(cached_obj)) {
+                  if (isTRUE(cached_obj$invisible)) return(invisible(cached_obj$value))
+                  return(cached_obj$value)
+                }
+                return(cached_obj)
+              }
+            }
+          }
+          if (isTRUE(getOption("cacheR.verbose")))
+            message(sprintf("cacheR: %s() wait timed out after %ds; executing", fname, wait_timeout))
+        }
+      }
+
+      # Create sentinel before executing (may fail on read-only dirs — that's OK)
+      suppressWarnings(try(file.create(sentinel), silent = TRUE))
+      on.exit(suppressWarnings(try(unlink(sentinel), silent = TRUE)), add = TRUE)
+
       # --- 6. EXECUTE (MISS) ---
-      
+
       # Setup file monitoring for warning
       paths_to_monitor <- input_paths
       file_snapshots <- character()
@@ -906,10 +942,11 @@ cachePrune <- function(cache_dir, days_old = 30) {
     }
   }
 
-  # Always clean up stale lock files and temp files
+  # Always clean up stale lock files, temp files, and computing sentinels
   lock_files <- list.files(cache_dir, pattern = "\\.lock$", full.names = TRUE)
   tmp_files <- list.files(cache_dir, pattern = "\\.tmp\\.", full.names = TRUE)
-  stale <- c(lock_files, tmp_files)
+  computing_files <- list.files(cache_dir, pattern = "\\.computing$", full.names = TRUE)
+  stale <- c(lock_files, tmp_files, computing_files)
   if (length(stale) > 0) {
     unlink(stale)
     message(sprintf("Removed %d stale lock/temp files.", length(stale)))

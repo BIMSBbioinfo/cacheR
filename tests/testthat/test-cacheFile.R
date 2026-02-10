@@ -1926,3 +1926,120 @@ test_that("depends_on_files and depends_on_vars default to NULL without affectin
   f(10)
   expect_equal(state$n, 1L)  # cache hit, no explicit deps
 })
+
+
+# =========================================================================
+# Parallel: Sentinel-based duplicate work prevention
+# =========================================================================
+
+test_that("sentinel file is created during execution and cleaned up after", {
+  tmp <- tempfile("sentinel_lifecycle_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  sentinel_seen <- FALSE
+  f <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) {
+    # Check for sentinel during execution
+    computing_files <- list.files(tmp, pattern = "\\.computing$")
+    if (length(computing_files) > 0) sentinel_seen <<- TRUE
+    x + 1
+  }
+
+  f(10)
+  expect_true(sentinel_seen)
+
+  # After execution, sentinel should be gone
+  computing_files <- list.files(tmp, pattern = "\\.computing$")
+  expect_equal(length(computing_files), 0)
+})
+
+test_that("sentinel wait loads result from parallel worker", {
+  skip_if_not_installed("callr")
+  tmp <- tempfile("sentinel_wait_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  # First, create a cached result so we know the expected outfile name
+  f <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) x * 10
+
+  # Execute once to populate cache
+  r <- f(5)
+  expect_equal(r, 50)
+
+  # Find the cache file
+  cache_files <- list.files(tmp, pattern = "\\.rds$", full.names = TRUE)
+  cache_files <- cache_files[!grepl("graph\\.rds$", cache_files)]
+  expect_true(length(cache_files) >= 1)
+  outfile <- cache_files[1]
+
+  # Delete the cache file and create a sentinel (simulating another worker computing)
+  sentinel <- paste0(outfile, ".computing")
+  unlink(outfile)
+  file.create(sentinel)
+
+  # Launch a background process that creates the cache file after 3 seconds
+  bg <- callr::r_bg(function(outfile, sentinel) {
+    Sys.sleep(3)
+    saveRDS(list(value = 50, meta = list(fname = "f")), outfile)
+    unlink(sentinel)
+  }, args = list(outfile = outfile, sentinel = sentinel))
+
+  # Main process should wait and pick up the result
+  withr::with_options(list(cacheR.wait_timeout = 30, cacheR.poll_interval = 1), {
+    result <- f(5)
+  })
+  bg$wait()
+
+  expect_equal(result, 50)
+})
+
+test_that("stale sentinel (> 1 hour old) is ignored", {
+  tmp <- tempfile("sentinel_stale_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  f <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) {
+    state$n <- state$n + 1L
+    x + 1
+  }
+
+  # Execute once to get the outfile name
+  f(10)
+  expect_equal(state$n, 1L)
+
+  # Find the outfile, delete it, create a stale sentinel
+  cache_files <- list.files(tmp, pattern = "\\.rds$", full.names = TRUE)
+  cache_files <- cache_files[!grepl("graph\\.rds$", cache_files)]
+  outfile <- cache_files[1]
+  unlink(outfile)
+
+  sentinel <- paste0(outfile, ".computing")
+  file.create(sentinel)
+  # Backdate sentinel to 2 hours ago
+  Sys.setFileTime(sentinel, Sys.time() - 7200)
+
+  # Function should execute immediately (not wait on stale sentinel)
+  f(10)
+  expect_equal(state$n, 2L)
+
+  # Clean up
+  unlink(sentinel)
+})
+
+test_that("cachePrune cleans up .computing sentinel files", {
+  tmp <- tempfile("sentinel_prune_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  # Create sentinel files
+  file.create(file.path(tmp, "func.abc123.rds.computing"))
+  file.create(file.path(tmp, "func.def456.rds.computing"))
+
+  expect_equal(length(list.files(tmp, pattern = "\\.computing$")), 2)
+
+  cachePrune(tmp, days_old = 30)
+
+  expect_equal(length(list.files(tmp, pattern = "\\.computing$")), 0)
+})
