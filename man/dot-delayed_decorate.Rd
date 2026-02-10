@@ -9,3 +9,4 @@
 \description{
 Combine two decorators lazily into a new decorator.
 }
+\keyword{internal}

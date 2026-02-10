@@ -123,7 +123,7 @@ pretty_code <- function(f) {
 }
 
 #' Combine two decorators lazily into a new decorator.
-#' @export
+#' @keywords internal
 .delayed_decorate <- function(d1, d2, decorator_calls) {
   stopifnot(inherits(d1, "decorator"), inherits(d2, "decorator"))
 
