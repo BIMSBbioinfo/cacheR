@@ -1410,3 +1410,71 @@ describe("File state cache management (#10)", {
     expect_false(identical(hash1, hash2))
   })
 })
+
+# =========================================================================
+# Tier 1 Cleanup: Bounded file state cache and cacheTree_save/load
+# =========================================================================
+
+describe("Bounded .file_state_cache", {
+
+  it("evicts entries when limit is exceeded", {
+    suppressMessages(cache_file_state_clear())
+
+    # Temporarily lower the limit
+    old_limit <- cacheR:::.file_state_cache_limit
+    unlockBinding(".file_state_cache_limit", asNamespace("cacheR"))
+    assign(".file_state_cache_limit", 5L, envir = asNamespace("cacheR"))
+    on.exit({
+      assign(".file_state_cache_limit", old_limit, envir = asNamespace("cacheR"))
+      lockBinding(".file_state_cache_limit", asNamespace("cacheR"))
+      suppressMessages(cache_file_state_clear())
+    }, add = TRUE)
+
+    tmp_dir <- file.path(tempdir(), paste0("lru_test_", as.integer(Sys.time())))
+    dir.create(tmp_dir, recursive = TRUE)
+    on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+    # Create and hash 10 files (exceeds limit of 5)
+    for (i in 1:10) {
+      f <- file.path(tmp_dir, paste0("file_", i, ".txt"))
+      writeLines(as.character(i), f)
+      cacheR:::.fast_file_hash(f)
+    }
+
+    info <- cache_file_state_info()
+    # After eviction + new entry, should be well under 10
+    expect_true(info$n_entries <= 6)
+  })
+})
+
+describe("cacheTree_save and cacheTree_load", {
+
+  it("round-trips graph nodes through save/load", {
+    cache_dir <- file.path(tempdir(), paste0("save_load_", as.integer(Sys.time())))
+    dir.create(cache_dir, recursive = TRUE)
+    on.exit(unlink(cache_dir, recursive = TRUE), add = TRUE)
+
+    cacheR::cacheTree_reset()
+
+    f <- function(x) x * 2
+    cached_f <- cacheFile(cache_dir, backend = "rds") %@% f
+    cached_f(5)
+
+    nodes_before <- cacheR::cacheTree_nodes()
+    expect_true(length(nodes_before) > 0)
+
+    # Save graph
+    graph_path <- file.path(cache_dir, "saved_graph.rds")
+    cacheTree_save(graph_path)
+    expect_true(file.exists(graph_path))
+
+    # Reset and verify empty
+    cacheR::cacheTree_reset()
+    expect_length(cacheR::cacheTree_nodes(), 0)
+
+    # Load and verify restored
+    cacheTree_load(graph_path)
+    nodes_after <- cacheR::cacheTree_nodes()
+    expect_equal(length(nodes_after), length(nodes_before))
+  })
+})
