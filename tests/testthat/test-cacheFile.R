@@ -1478,3 +1478,217 @@ describe("cacheTree_save and cacheTree_load", {
     expect_equal(length(nodes_after), length(nodes_before))
   })
 })
+
+
+# =========================================================================
+# Tier 2: cache_stats, verbose miss, .cacheR.yml, better errors
+# =========================================================================
+
+test_that("cache_stats returns correct aggregate statistics", {
+  tmp <- tempfile("stats_test_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  # Empty dir
+  st <- cache_stats(tmp)
+  expect_equal(st$n_entries, 0L)
+  expect_equal(st$total_size_mb, 0)
+  expect_true(is.na(st$oldest))
+  expect_equal(nrow(st$by_function), 0)
+
+  # Populate with cached functions (use rds backend for predictability)
+  add_one <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) x + 1
+  add_two <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) x + 2
+
+  add_one(10)
+  add_one(20)
+  add_two(10)
+
+  st2 <- cache_stats(tmp)
+  expect_equal(st2$n_entries, 3L)
+  # Files are small, so total_size_mb may round to 0 — check raw file sizes instead
+  files <- list.files(tmp, pattern = "\\.(rds|qs)$", full.names = TRUE)
+  files <- files[!grepl("graph\\.rds$", files)]
+  expect_true(sum(file.size(files)) > 0)
+  expect_true(!is.na(st2$oldest))
+  expect_true(!is.na(st2$newest))
+  expect_true(nrow(st2$by_function) >= 1)
+  expect_true("n_files" %in% names(st2$by_function))
+  expect_true("total_size_mb" %in% names(st2$by_function))
+})
+
+test_that("cache_stats excludes graph.rds", {
+  tmp <- tempfile("stats_graph_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  # Create a graph.rds file manually
+  saveRDS(list(), file.path(tmp, "graph.rds"))
+
+  st <- cache_stats(tmp)
+  expect_equal(st$n_entries, 0L)
+})
+
+test_that("cache_stats errors on non-existent directory", {
+  expect_error(cache_stats("/nonexistent/path/xyz"), "not found")
+})
+
+
+test_that("verbose mode reports 'first execution' on first call", {
+  tmp <- tempfile("verbose_first_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  f <- cacheFile(cache_dir = tmp) %@% function(x) x * 2
+
+  withr::with_options(list(cacheR.verbose = TRUE), {
+    msgs <- capture.output(f(42), type = "message")
+    expect_true(any(grepl("first execution", msgs)))
+  })
+})
+
+test_that("verbose mode reports which component changed on miss", {
+  tmp <- tempfile("verbose_change_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  f <- cacheFile(cache_dir = tmp) %@% function(x) x * 2
+
+  # First call (populates cache)
+  f(1)
+
+  # Second call with different args
+  withr::with_options(list(cacheR.verbose = TRUE), {
+    msgs <- capture.output(f(2), type = "message")
+    expect_true(any(grepl("arguments", msgs)))
+  })
+})
+
+test_that("verbose mode is silent when option is not set", {
+  tmp <- tempfile("verbose_silent_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  f <- cacheFile(cache_dir = tmp) %@% function(x) x * 2
+
+  withr::with_options(list(cacheR.verbose = NULL), {
+    msgs <- capture.output(f(1), type = "message")
+    expect_length(msgs, 0)
+  })
+})
+
+
+test_that(".load_cacheR_config loads settings from YAML file", {
+  skip_if_not_installed("yaml")
+
+  tmp <- tempfile("yml_test_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  yml_path <- file.path(tmp, ".cacheR.yml")
+  writeLines(c(
+    "backend: rds",
+    "verbose: true",
+    "env_vars:",
+    "  - PYTHONPATH",
+    "  - R_LIBS"
+  ), yml_path)
+
+  # Clear options first
+  withr::with_options(list(
+    cacheR.backend = NULL,
+    cacheR.verbose = NULL,
+    cacheR.env_vars = NULL
+  ), {
+    cacheR:::.load_cacheR_config(yml_path)
+
+    expect_equal(getOption("cacheR.backend"), "rds")
+    expect_true(getOption("cacheR.verbose"))
+    expect_equal(getOption("cacheR.env_vars"), c("PYTHONPATH", "R_LIBS"))
+  })
+})
+
+test_that(".load_cacheR_config does not override existing options", {
+  skip_if_not_installed("yaml")
+
+  tmp <- tempfile("yml_nooverride_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  yml_path <- file.path(tmp, ".cacheR.yml")
+  writeLines("backend: qs", yml_path)
+
+  withr::with_options(list(cacheR.backend = "rds"), {
+    cacheR:::.load_cacheR_config(yml_path)
+    # Should keep "rds" since it was already set
+    expect_equal(getOption("cacheR.backend"), "rds")
+  })
+})
+
+test_that("env_vars from config option is used by cacheFile", {
+  tmp <- tempfile("envvar_config_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  withr::with_options(list(cacheR.env_vars = c("HOME")), {
+    f <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) x + 1
+    f(1)
+
+    # Check the cache entry metadata includes sys_envs (proving env_vars was picked up)
+    files <- list.files(tmp, pattern = "\\.rds$", full.names = TRUE)
+    files <- files[!grepl("graph\\.rds$", files)]
+    expect_true(length(files) >= 1)
+
+    obj <- readRDS(files[1])
+    expect_true(!is.null(obj$meta$sys_envs))
+    # sys_envs should contain the HOME value
+    expect_true(Sys.getenv("HOME") %in% unlist(obj$meta$sys_envs))
+  })
+})
+
+
+test_that("warning on non-writable cache directory", {
+  skip_on_os("windows")
+
+  tmp <- tempfile("readonly_")
+  dir.create(tmp)
+  on.exit({
+    Sys.chmod(tmp, "755")
+    unlink(tmp, recursive = TRUE)
+  })
+
+  # Make directory read-only
+  Sys.chmod(tmp, "444")
+
+  expect_warning(
+    cacheFile(cache_dir = tmp) %@% function(x) x,
+    "not writable"
+  )
+})
+
+test_that("warning on corrupt cache file during load", {
+  tmp <- tempfile("corrupt_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  f <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) x + 1
+
+  # First call to establish function name pattern
+  result <- f(100)
+  expect_equal(result, 101)
+
+  # Find the cache file and corrupt it
+  files <- list.files(tmp, pattern = "\\.rds$", full.names = TRUE)
+  files <- files[!grepl("graph\\.rds$", files)]
+  expect_true(length(files) >= 1)
+
+  # Corrupt the file
+  writeBin(charToRaw("CORRUPT"), files[1])
+
+  # Next call with same args should warn about unreadable file and re-execute
+  expect_warning(
+    result2 <- f(100),
+    "unreadable"
+  )
+  expect_equal(result2, 101)
+})
