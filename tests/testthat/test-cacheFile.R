@@ -1692,3 +1692,237 @@ test_that("warning on corrupt cache file during load", {
   )
   expect_equal(result2, 101)
 })
+
+
+# =========================================================================
+# Tier 3: Conditional caching, versioning, dependency declaration
+# =========================================================================
+
+# --- Feature 9: .force and .skip_save ---
+
+test_that(".force = TRUE re-executes even when cache exists", {
+  tmp <- tempfile("force_test_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  # Use env-based counter to avoid changing closure hash
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  f <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) {
+    state$n <- state$n + 1L
+    x * 2
+  }
+
+  r1 <- f(5)
+  expect_equal(r1, 10)
+  expect_equal(state$n, 1L)
+
+  # Normal call — should hit cache
+  r2 <- f(5)
+  expect_equal(r2, 10)
+  expect_equal(state$n, 1L)
+
+  # Force — should re-execute
+  r3 <- f(5, .force = TRUE)
+  expect_equal(r3, 10)
+  expect_equal(state$n, 2L)
+
+  # Result should be saved (force re-writes cache)
+  cache_files <- list.files(tmp, pattern = "\\.rds$", full.names = TRUE)
+  cache_files <- cache_files[!grepl("graph\\.rds$", cache_files)]
+  expect_true(length(cache_files) >= 1)
+})
+
+test_that(".skip_save = TRUE does not write cache file on miss", {
+  tmp <- tempfile("skipsave_test_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  f <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) x + 1
+
+  r1 <- f(10, .skip_save = TRUE)
+  expect_equal(r1, 11)
+
+  # No cache file should exist (only graph.rds)
+  cache_files <- list.files(tmp, pattern = "\\.rds$", full.names = TRUE)
+  cache_files <- cache_files[!grepl("graph\\.rds$", cache_files)]
+  expect_equal(length(cache_files), 0)
+})
+
+test_that(".force + .skip_save combined: re-executes and doesn't save", {
+  tmp <- tempfile("force_skip_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  f <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) {
+    state$n <- state$n + 1L
+    x * 3
+  }
+
+  # First call, normal — saves to cache
+  r1 <- f(2)
+  expect_equal(r1, 6)
+  expect_equal(state$n, 1L)
+
+  cache_files_before <- list.files(tmp, pattern = "\\.rds$", full.names = TRUE)
+  cache_files_before <- cache_files_before[!grepl("graph\\.rds$", cache_files_before)]
+  n_before <- length(cache_files_before)
+
+  # Force + skip_save: re-executes but doesn't overwrite cache
+  r2 <- f(2, .force = TRUE, .skip_save = TRUE)
+  expect_equal(r2, 6)
+  expect_equal(state$n, 2L)
+
+  # Cache file count unchanged
+  cache_files_after <- list.files(tmp, pattern = "\\.rds$", full.names = TRUE)
+  cache_files_after <- cache_files_after[!grepl("graph\\.rds$", cache_files_after)]
+  expect_equal(length(cache_files_after), n_before)
+})
+
+
+# --- Feature 10: Cache versioning ---
+
+test_that("version parameter: same version hits cache", {
+  tmp <- tempfile("version_hit_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  f <- cacheFile(cache_dir = tmp, backend = "rds", version = "1.0") %@% function(x) {
+    state$n <- state$n + 1L
+    x + 1
+  }
+
+  f(10)
+  expect_equal(state$n, 1L)
+  f(10)
+  expect_equal(state$n, 1L)  # cache hit
+})
+
+test_that("version parameter: different version causes cache miss", {
+  tmp <- tempfile("version_miss_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+
+  f_v1 <- cacheFile(cache_dir = tmp, backend = "rds", version = "1.0") %@% function(x) {
+    state$n <- state$n + 1L
+    x + 1
+  }
+
+  f_v2 <- cacheFile(cache_dir = tmp, backend = "rds", version = "2.0") %@% function(x) {
+    state$n <- state$n + 1L
+    x + 1
+  }
+
+  f_v1(10)
+  expect_equal(state$n, 1L)
+
+  # Different version — cache miss
+  f_v2(10)
+  expect_equal(state$n, 2L)
+})
+
+test_that("version = NULL (default) works normally", {
+  tmp <- tempfile("version_null_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  f <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) {
+    state$n <- state$n + 1L
+    x + 1
+  }
+
+  f(5)
+  expect_equal(state$n, 1L)
+  f(5)
+  expect_equal(state$n, 1L)  # cache hit with NULL version
+})
+
+
+# --- Feature 11: Dependency declaration ---
+
+test_that("depends_on_files: file change causes cache miss", {
+  tmp <- tempfile("depfiles_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  # Create an external config file
+  config <- file.path(tmp, "config.txt")
+  writeLines("setting=1", config)
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  f <- cacheFile(cache_dir = tmp, backend = "rds", depends_on_files = config) %@% function(x) {
+    state$n <- state$n + 1L
+    x + 1
+  }
+
+  f(10)
+  expect_equal(state$n, 1L)
+  f(10)
+  expect_equal(state$n, 1L)  # cache hit
+
+  # Modify the external config
+  writeLines("setting=2", config)
+  # Clear file state cache so the new content is detected
+  cache_file_state_clear()
+
+  f(10)
+  expect_equal(state$n, 2L)  # cache miss due to file change
+})
+
+test_that("depends_on_vars: different values cause cache miss", {
+  tmp <- tempfile("depvars_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+
+  f_v1 <- cacheFile(cache_dir = tmp, backend = "rds",
+                     depends_on_vars = list(schema = "v3")) %@% function(x) {
+    state$n <- state$n + 1L
+    x + 1
+  }
+
+  f_v2 <- cacheFile(cache_dir = tmp, backend = "rds",
+                     depends_on_vars = list(schema = "v4")) %@% function(x) {
+    state$n <- state$n + 1L
+    x + 1
+  }
+
+  f_v1(10)
+  expect_equal(state$n, 1L)
+
+  f_v1(10)
+  expect_equal(state$n, 1L)  # cache hit
+
+  f_v2(10)
+  expect_equal(state$n, 2L)  # cache miss — different vars
+})
+
+test_that("depends_on_files and depends_on_vars default to NULL without affecting behavior", {
+  tmp <- tempfile("depnull_")
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  f <- cacheFile(cache_dir = tmp, backend = "rds") %@% function(x) {
+    state$n <- state$n + 1L
+    x + 1
+  }
+
+  f(10)
+  expect_equal(state$n, 1L)
+  f(10)
+  expect_equal(state$n, 1L)  # cache hit, no explicit deps
+})

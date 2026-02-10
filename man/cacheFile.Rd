@@ -11,7 +11,10 @@ cacheFile(
   file_pattern = NULL,
   env_vars = NULL,
   hash_file_paths = TRUE,
-  algo = "xxhash64"
+  algo = "xxhash64",
+  version = NULL,
+  depends_on_files = NULL,
+  depends_on_vars = NULL
 )
 }
 \description{

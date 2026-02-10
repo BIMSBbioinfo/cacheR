@@ -1,5 +1,7 @@
 [] expand to output "targets" file
 [] merkel tree dependency
+[] Optional compression for cache entries (gzip/xz/zstd levels via compress parameter)
+
 
 [] Maybe include the directory path itself in metadata, so if you move the entire project folder but preserve relative structure, the cache is still valid (you’re mostly there since you use relative paths inside dirs).
 

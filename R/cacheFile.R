@@ -622,7 +622,10 @@ cacheFile <- function(cache_dir       = NULL,
                       file_pattern    = NULL,
                       env_vars        = NULL,
                       hash_file_paths = TRUE,
-                      algo            = "xxhash64") decorator %@% function(f) {
+                      algo            = "xxhash64",
+                      version         = NULL,
+                      depends_on_files = NULL,
+                      depends_on_vars  = NULL) decorator %@% function(f) {
 
   force(f)
     if (is.null(cache_dir)) cache_dir <- cacheR_default_dir()
@@ -642,13 +645,22 @@ cacheFile <- function(cache_dir       = NULL,
     ast_deps <- .scan_ast_deps(body(f))
     
     # The actual wrapped function
-    wrapper <- function(..., .load = TRUE) {
+    wrapper <- function(..., .load = TRUE, .force = FALSE, .skip_save = FALSE) {
       # --- 1. CAPTURE & CANONICALIZE ARGUMENTS ---
       
       # A. Get the definition-based args (Standard args + Defaults)
       # We pass sys.call() to get the exact expression used to call this wrapper
       # parent.frame() is where the arguments (like 'x') exist.
-      canon_args <- .get_canonical_values(f, sys.call(), parent.frame())
+      # Strip wrapper-specific params (.load, .force, .skip_save) so they don't
+      # confuse match.call() when f doesn't have these params.
+      raw_call <- sys.call()
+      wrapper_params <- c(".load", ".force", ".skip_save")
+      call_names <- names(raw_call)
+      if (!is.null(call_names)) {
+        keep <- !(call_names %in% wrapper_params)
+        raw_call <- raw_call[keep]
+      }
+      canon_args <- .get_canonical_values(f, raw_call, parent.frame())
       
       # B. Handle Dots (...) Explicitly
       # .get_canonical_values strips '...' because they are hard to eval from call.
@@ -687,14 +699,32 @@ cacheFile <- function(cache_dir       = NULL,
       # --- 3. COMPUTE FINAL KEY ---
       body_hash <- digest::digest(body(f), algo = algo)
       
+      # Explicit file dependencies (declared via depends_on_files)
+      explicit_deps_hash <- NULL
+      if (!is.null(depends_on_files)) {
+        dep_hashes <- vapply(depends_on_files, function(p) {
+          .get_path_hash(p, file_pattern = file_pattern, algo = algo)
+        }, character(1L))
+        explicit_deps_hash <- dep_hashes[order(names(dep_hashes))]
+      }
+
+      # Explicit variable dependencies (declared via depends_on_vars)
+      explicit_vars_hash <- NULL
+      if (!is.null(depends_on_vars)) {
+        explicit_vars_hash <- digest::digest(depends_on_vars, algo = algo)
+      }
+
       hashlist <- list(
-        input_hash = input_hash, 
-        env_hash = env_hash, 
+        input_hash = input_hash,
+        env_hash = env_hash,
         body_hash = body_hash,
         pkgs = pkg_versions,
         sys_envs = current_envs,
         sys_opts = current_opts,
-        dir_states = dir_states_key
+        dir_states = dir_states_key,
+        version = version,
+        explicit_deps = explicit_deps_hash,
+        explicit_vars = explicit_vars_hash
       )
       
       master_key <- digest::digest(hashlist, algo = algo)
@@ -723,13 +753,18 @@ cacheFile <- function(cache_dir       = NULL,
       
       # Track Input Files
       input_paths <- unique(.extract_paths_recursively(input_values))
-      for (p in input_paths) track_file(p, cache_dir = cache_dir) 
+      for (p in input_paths) track_file(p, cache_dir = cache_dir)
+
+      # Track explicit file dependencies in graph
+      if (!is.null(depends_on_files)) {
+        for (p in depends_on_files) track_file(p, cache_dir = cache_dir)
+      }
 
       # Hook
       if (exists(".cacheTree_register_node", mode = "function")) .cacheTree_register_node(node_id, fname, master_key, outfile)
       
       # --- 5. CHECK CACHE ---
-      if (.load && file.exists(outfile)) {
+      if (.load && !.force && file.exists(outfile)) {
         cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) {
           warning(sprintf("cacheR: cache file unreadable (re-executing): %s", conditionMessage(e)), call. = FALSE)
           NULL
@@ -761,6 +796,9 @@ cacheFile <- function(cache_dir       = NULL,
             if (!identical(sm$sys_envs, current_envs))   changes <- c(changes, "environment variables")
             if (!identical(sm$sys_opts, current_opts))   changes <- c(changes, "R options")
             if (!identical(sm$dir_states, dir_states_key)) changes <- c(changes, "file/directory contents")
+            if (!identical(sm$version, version))           changes <- c(changes, "version")
+            if (!identical(sm$explicit_deps, explicit_deps_hash)) changes <- c(changes, "explicit file dependencies")
+            if (!identical(sm$explicit_vars, explicit_vars_hash)) changes <- c(changes, "explicit variable dependencies")
             if (length(changes) == 0) changes <- "unknown (possibly new argument combination)"
             message(sprintf("cacheR: miss for %s() -- changed: %s", fname, paste(changes, collapse = ", ")))
           } else {
@@ -813,31 +851,33 @@ cacheFile <- function(cache_dir       = NULL,
          args_values = input_values
       ))
       
-      save_obj <- list(value=dat, meta=full_meta)
-      if (dat_invisible) save_obj$invisible <- TRUE
-      do_save <- function() .atomic_save(save_obj, outfile, backend)
-      
-      if (requireNamespace("filelock", quietly = TRUE)) {
-        lock <- tryCatch(filelock::lock(paste0(outfile, ".lock"), timeout = 5000), error = function(e) NULL)
-        if (!is.null(lock)) {
-          on.exit(filelock::unlock(lock), add = TRUE)
-          # Double-check if someone else wrote it while we waited
-          if (.load && file.exists(outfile)) {
-             cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
-             if (!is.null(cached_obj)) {
-               if (is.list(cached_obj) && "value" %in% names(cached_obj)) {
-                 if (isTRUE(cached_obj$invisible)) return(invisible(cached_obj$value))
-                 return(cached_obj$value)
+      if (!.skip_save) {
+        save_obj <- list(value=dat, meta=full_meta)
+        if (dat_invisible) save_obj$invisible <- TRUE
+        do_save <- function() .atomic_save(save_obj, outfile, backend)
+
+        if (requireNamespace("filelock", quietly = TRUE)) {
+          lock <- tryCatch(filelock::lock(paste0(outfile, ".lock"), timeout = 5000), error = function(e) NULL)
+          if (!is.null(lock)) {
+            on.exit(filelock::unlock(lock), add = TRUE)
+            # Double-check if someone else wrote it while we waited
+            if (.load && !.force && file.exists(outfile)) {
+               cached_obj <- tryCatch(.safe_load(outfile, backend), error = function(e) NULL)
+               if (!is.null(cached_obj)) {
+                 if (is.list(cached_obj) && "value" %in% names(cached_obj)) {
+                   if (isTRUE(cached_obj$invisible)) return(invisible(cached_obj$value))
+                   return(cached_obj$value)
+                 }
+                 return(cached_obj)
                }
-               return(cached_obj)
-             }
+            }
+            do_save()
+          } else {
+            warning("cacheR: could not acquire save lock; saving without lock", call. = FALSE)
+            do_save()
           }
-          do_save()
-        } else {
-          warning("cacheR: could not acquire save lock; saving without lock", call. = FALSE)
-          do_save()
-        }
-      } else { do_save() }
+        } else { do_save() }
+      }
 
       if (dat_invisible) invisible(dat) else dat
     }
