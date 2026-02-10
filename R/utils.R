@@ -118,3 +118,80 @@ cacheList <- function(cache_dir) {
   
   do.call(rbind, lapply(files, get_meta_row))
 }
+
+# --------------------------------------------- #
+#' Aggregate Cache Statistics
+#'
+#' Computes summary statistics for a cache directory: number of entries,
+#' total size, age range, and per-function breakdown.
+#'
+#' @param cache_dir A character string specifying the path to the cache directory.
+#'
+#' @return A list with:
+#' \item{n_entries}{Integer count of cache files (excluding graph.rds).}
+#' \item{total_size_mb}{Total size in megabytes (rounded to 2 decimal places).}
+#' \item{oldest}{POSIXct timestamp of the oldest cache file.}
+#' \item{newest}{POSIXct timestamp of the newest cache file.}
+#' \item{by_function}{A data.frame with columns \code{fname}, \code{n_files},
+#'   and \code{total_size_mb} summarizing entries per cached function.}
+#'
+#' @export
+cache_stats <- function(cache_dir) {
+  if (!dir.exists(cache_dir)) stop("Cache directory not found: ", cache_dir)
+
+  files <- list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE)
+  # Exclude graph.rds
+  files <- files[!grepl("^graph\\.rds$", basename(files))]
+
+  if (length(files) == 0) {
+    return(list(
+      n_entries = 0L,
+      total_size_mb = 0,
+      oldest = as.POSIXct(NA),
+      newest = as.POSIXct(NA),
+      by_function = data.frame(
+        fname = character(), n_files = integer(),
+        total_size_mb = numeric(), stringsAsFactors = FALSE
+      )
+    ))
+  }
+
+  info <- file.info(files)
+  sizes <- info$size
+  mtimes <- info$mtime
+
+  # Extract function name from metadata
+  fnames <- vapply(files, function(f) {
+    tryCatch({
+      obj <- cacheInfo(f)
+      m <- obj$meta
+      if (!is.null(m$fname) && !is.na(m$fname)) m$fname else NA_character_
+    }, error = function(e) NA_character_)
+  }, character(1), USE.NAMES = FALSE)
+
+  # Per-function breakdown
+  if (any(!is.na(fnames))) {
+    counts <- tapply(sizes, fnames, length)
+    totals <- tapply(sizes, fnames, sum)
+    by_func <- data.frame(
+      fname = names(counts),
+      n_files = as.integer(counts),
+      total_size_mb = round(as.numeric(totals) / 1024^2, 2),
+      stringsAsFactors = FALSE,
+      row.names = NULL
+    )
+  } else {
+    by_func <- data.frame(
+      fname = character(), n_files = integer(),
+      total_size_mb = numeric(), stringsAsFactors = FALSE
+    )
+  }
+
+  list(
+    n_entries = length(files),
+    total_size_mb = round(sum(sizes, na.rm = TRUE) / 1024^2, 2),
+    oldest = min(mtimes, na.rm = TRUE),
+    newest = max(mtimes, na.rm = TRUE),
+    by_function = by_func
+  )
+}
