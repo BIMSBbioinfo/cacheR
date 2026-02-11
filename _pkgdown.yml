@@ -15,23 +15,33 @@ navbar:
   components:
     github:
       icon: fab fa-github
-      href: https://github.com//BIMSBbioinfo/cacheR
+      href: https://github.com/BIMSBbioinfo/cacheR
 
-  articles:
-    - title: Getting started
-      contents:
-        - cacheR-introduction
+articles:
+  - title: Getting started
+    contents:
+      - cacheR-introduction
 
-    - title: RNA-seq workflow example
-      contents:
-        - cacheR-rnaseq
+  - title: RNA-seq workflow example
+    contents:
+      - cacheR-rnaseq
 
-  reference:
-    - title: "User functions"
-      contents:
-        - starts_with("cache")
-    - title: "Internals"
-      contents:
-        - starts_with(".")
+  - title: Machine learning example
+    contents:
+      - cacheR-machine_learning
 
-
+reference:
+  - title: "User functions"
+    contents:
+      - starts_with("cache")
+      - track_file
+      - export_targets_file
+  - title: "Decorator"
+    contents:
+      - decorator
+      - "%@%"
+      - prettify
+      - pretty_code
+  - title: "Internals"
+    contents:
+      - starts_with(".")
