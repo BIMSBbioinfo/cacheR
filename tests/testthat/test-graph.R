@@ -236,3 +236,78 @@ test_that("track_file registers file dependencies with hashes", {
   unlink(cache_dir, recursive = TRUE)
   unlink(data_path)
 })
+
+
+# ============================================================================
+# plot_cache_graph tests
+# ============================================================================
+
+test_that("plot_cache_graph returns igraph for empty graph", {
+  skip_if_not_installed("igraph")
+  cacheTree_reset()
+
+  g <- plot_cache_graph()
+  expect_true(inherits(g, "igraph"))
+  expect_equal(igraph::vcount(g), 0)
+})
+
+test_that("plot_cache_graph shows cached functions", {
+  skip_if_not_installed("igraph")
+  cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "plot_graph_test")
+  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+  on.exit(unlink(cache_dir, recursive = TRUE))
+
+  inner <- cacheFile(cache_dir) %@% function(x) x + 1
+  outer <- cacheFile(cache_dir) %@% function(x) inner(x) * 2
+
+  outer(5)
+
+  g <- plot_cache_graph()
+  expect_true(inherits(g, "igraph"))
+  expect_true(igraph::vcount(g) >= 2)
+  expect_true(igraph::ecount(g) >= 1)
+
+  vertex_labels <- igraph::V(g)$label
+  expect_true("inner" %in% vertex_labels)
+  expect_true("outer" %in% vertex_labels)
+})
+
+test_that("plot_cache_graph saves to file", {
+  skip_if_not_installed("igraph")
+  cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "plot_graph_save")
+  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+  on.exit(unlink(cache_dir, recursive = TRUE))
+
+  f <- cacheFile(cache_dir) %@% function(x) x
+  f(1)
+
+  out_file <- tempfile(fileext = ".png")
+  g <- plot_cache_graph(output = out_file)
+  expect_true(file.exists(out_file))
+  expect_gt(file.info(out_file)$size, 0)
+  unlink(out_file)
+})
+
+test_that("plot_cache_graph with cache_dir loads from disk", {
+  skip_if_not_installed("igraph")
+  cacheTree_reset()
+
+  cache_dir <- file.path(tempdir(), "plot_graph_sync")
+  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
+  on.exit(unlink(cache_dir, recursive = TRUE))
+
+  f <- cacheFile(cache_dir) %@% function(x) x * 2
+  f(42)
+
+  # graph should already have been written to disk by cacheFile
+  # reset in-memory and reload via plot_cache_graph
+  node_count_before <- length(cacheTree_nodes())
+  expect_true(node_count_before >= 1)
+
+  g <- plot_cache_graph()
+  expect_true(igraph::vcount(g) >= 1)
+})

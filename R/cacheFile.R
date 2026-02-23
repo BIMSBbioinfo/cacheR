@@ -220,6 +220,147 @@ cacheTree_load <- function(path) {
   invisible(TRUE)
 }
 
+#' Plot the Cache Dependency Graph
+#'
+#' Visualise the current in-memory cache tree as a directed graph.
+#' Requires the \pkg{igraph} package (listed in Suggests).
+#'
+#' @param cache_dir Optional cache directory.  When provided the graph is
+#'   first synchronised from disk via \code{\link{cacheTree_sync}}.
+#' @param output Optional file path (e.g. \code{"graph.png"} or
+#'   \code{"graph.pdf"}).
+#'   If \code{NULL} (the default), the graph is plotted to the current
+#'   graphics device.
+#' @param highlight_stale Logical.
+#'   If \code{TRUE} (default), nodes whose tracked files have changed
+#'   on disk are coloured amber.
+#'
+#' @return An \pkg{igraph} graph object (invisibly).
+#' @export
+plot_cache_graph <- function(cache_dir = NULL, output = NULL,
+                             highlight_stale = TRUE) {
+
+  if (!requireNamespace("igraph", quietly = TRUE)) {
+    stop("plot_cache_graph requires the 'igraph' package.\n",
+         "Install it with:  install.packages(\"igraph\")", call. = FALSE)
+  }
+
+  # sync from disk if requested
+  if (!is.null(cache_dir)) {
+    cacheTree_sync(cache_dir)
+  }
+
+  nodes_list <- as.list(.graph_cache$nodes)
+  edges_list <- as.list(.graph_cache$edges)
+
+  # -- empty graph -----------------------------------------------------------
+  if (length(nodes_list) == 0) {
+    g <- igraph::make_empty_graph(directed = TRUE)
+    message("Cache graph is empty.")
+    return(invisible(g))
+  }
+
+  # -- build igraph ----------------------------------------------------------
+  node_ids <- names(nodes_list)
+  node_types   <- vapply(nodes_list, function(n) if (!is.null(n$type)) n$type else "function", "")
+  node_labels  <- vapply(nodes_list, function(n) if (!is.null(n$label)) n$label else n$id, "")
+
+  # colours
+  COL_CACHED  <- "#1D3557"
+  COL_STALE   <- "#FBBC04"
+  COL_FILE    <- "#457B9D"
+  COL_MISSING <- "#ADB5BD"
+
+  stale_ids <- character()
+  if (highlight_stale) {
+    # find nodes whose tracked files changed
+    for (nid in node_ids) {
+      nd <- nodes_list[[nid]]
+      fh <- nd$file_hashes
+      if (length(fh) > 0) {
+        for (fp in names(fh)) {
+          if (!file.exists(fp)) {
+            stale_ids <- c(stale_ids, nid)
+            break
+          }
+          new_hash <- tryCatch(.fast_file_hash(fp), error = function(e) NA)
+          if (!identical(new_hash, fh[[fp]])) {
+            stale_ids <- c(stale_ids, nid)
+            break
+          }
+        }
+      }
+    }
+  }
+
+  node_colors <- vapply(seq_along(node_ids), function(i) {
+    nid <- node_ids[i]
+    if (nid %in% stale_ids) return(COL_STALE)
+    if (node_types[i] == "file")  return(COL_FILE)
+    return(COL_CACHED)
+  }, "")
+
+  node_text_colors <- ifelse(
+    node_colors %in% c(COL_CACHED), "#FFFFFF", "#333333"
+  )
+
+  node_shapes <- ifelse(node_types == "file", "square", "circle")
+
+  # edges
+  edge_from <- vapply(edges_list, function(e) e$from, "")
+  edge_to   <- vapply(edges_list, function(e) e$to, "")
+
+  # filter to edges whose both endpoints exist
+  valid <- edge_from %in% node_ids & edge_to %in% node_ids
+  edge_from <- edge_from[valid]
+  edge_to   <- edge_to[valid]
+
+  g <- igraph::make_empty_graph(directed = TRUE)
+  g <- igraph::add_vertices(g, length(node_ids), name = node_ids)
+
+  if (length(edge_from) > 0) {
+    edge_vec <- as.vector(rbind(edge_from, edge_to))
+    g <- igraph::add_edges(g, edge_vec)
+  }
+
+  igraph::V(g)$label       <- node_labels
+  igraph::V(g)$color       <- node_colors
+  igraph::V(g)$frame.color <- node_colors
+  igraph::V(g)$label.color <- node_text_colors
+  igraph::V(g)$shape       <- node_shapes
+  igraph::V(g)$size        <- ifelse(node_types == "file", 18, 25)
+  igraph::V(g)$label.cex   <- 0.7
+
+  igraph::E(g)$color       <- "#888888"
+  igraph::E(g)$arrow.size  <- 0.5
+
+  # layout
+  lay <- tryCatch(
+    igraph::layout_with_sugiyama(g)$layout,
+    error = function(e) igraph::layout_with_fr(g)
+  )
+
+  # -- plot / save -----------------------------------------------------------
+  if (!is.null(output)) {
+    ext <- tolower(tools::file_ext(output))
+    if (ext == "pdf") {
+      grDevices::pdf(output, width = 8, height = 6)
+    } else {
+      grDevices::png(output, width = 960, height = 720, res = 120)
+    }
+    on.exit(grDevices::dev.off(), add = TRUE)
+  }
+
+  igraph::plot.igraph(
+    g, layout = lay,
+    main = "cacheR - Cache Graph",
+    margin = 0.1
+  )
+
+  invisible(g)
+}
+
+
 #' Explicitly Track a File Dependency
 #' @export
 track_file <- function(path, cache_dir = NULL) {

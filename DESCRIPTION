@@ -25,6 +25,7 @@ Imports:
     compiler,
     filelock
 Suggests:
+    igraph,
     mockery,
     testthat (>= 3.0.0),
     knitr,

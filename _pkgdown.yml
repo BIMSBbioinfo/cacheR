@@ -34,6 +34,7 @@ reference:
   - title: "User functions"
     contents:
       - starts_with("cache")
+      - plot_cache_graph
       - track_file
       - export_targets_file
   - title: "Decorator"
