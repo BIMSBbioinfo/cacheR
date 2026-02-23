@@ -244,6 +244,22 @@ You should see at least two nodes:
 - one for `analyze_scaled(mat2)`
 - one for `cached_preprocess_matrix(mat2)`
 
+### Visualizing the cache graph
+
+If you have the `igraph` package installed, you can visualize the dependency tree with `plot_cache_graph()`. Nodes are coloured by state: **navy** = cached, **amber** = stale, **blue** = file dependency.
+
+```{r, fig.width=7, fig.height=5}
+if (requireNamespace("igraph", quietly = TRUE)) {
+  plot_cache_graph()
+}
+```
+
+You can also save the plot to a file:
+
+```{r, eval=FALSE}
+plot_cache_graph(output = "cache_graph.png")
+```
+
 ---
 
 # 5. Using the `qs` backend for faster serialization
