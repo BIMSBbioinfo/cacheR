@@ -11,6 +11,10 @@ It automatically checks for changes in code and input data and re-runs the code 
 
 It's like snakemake/nextflow, but on the fly
 
+<p align="center">
+  <img src="../Results/cacheR_graph_animation.gif" alt="cacheR cache graph animation" width="700"/>
+</p>
+
 ## What is it useful for?
 
 - Keeping the analysis up to date
