@@ -751,6 +751,8 @@ track_file <- function(path, cache_dir = NULL) {
 #' Default Cache Directory
 #' @export
 cacheR_default_dir <- function() {
+  env_dir <- Sys.getenv("CACHER_DIR", unset = "")
+  if (nzchar(env_dir)) return(env_dir)
   getOption("cacheR.dir", default = file.path(getwd(), ".cacheR"))
 }
 
@@ -976,6 +978,8 @@ cacheFile <- function(cache_dir       = NULL,
                 return(cached_obj)
               }
             }
+            # sentinel removed but no cache file -> other process failed, stop waiting
+            if (!file.exists(sentinel)) break
           }
           if (isTRUE(getOption("cacheR.verbose")))
             message(sprintf("cacheR: %s() wait timed out after %ds; executing", fname, wait_timeout))
