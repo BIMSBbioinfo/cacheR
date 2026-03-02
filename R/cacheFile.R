@@ -631,6 +631,35 @@ track_file <- function(path, cache_dir = NULL) {
   vapply(pkgs, function(p) tryCatch(as.character(utils::packageVersion(p)), error = function(e) "NA"), character(1))
 }
 
+#' Scan function AST for path-like function calls
+#' @keywords internal
+.find_path_specs <- function(expr) {
+  target_fns <- c("list.files", "list.dirs", "readRDS", "read.csv",
+                  "read.table", "readLines", "scan", "file", "read_csv",
+                  "read_tsv", "read_delim", "fread", "read.delim",
+                  "source", "load")
+  literals <- character()
+  symbols  <- character()
+  walker <- function(e) {
+    if (is.call(e)) {
+      fn_name <- tryCatch(as.character(e[[1]]), error = function(z) "")
+      # handle namespaced calls like readr::read_csv
+      if (length(fn_name) > 1) fn_name <- fn_name[length(fn_name)]
+      if (length(fn_name) == 1 && fn_name %in% target_fns && length(e) >= 2) {
+        arg <- e[[2]]
+        if (is.character(arg)) {
+          literals <<- c(literals, arg)
+        } else if (is.symbol(arg)) {
+          symbols <<- c(symbols, as.character(arg))
+        }
+      }
+      lapply(e, walker)
+    }
+  }
+  walker(expr)
+  list(literals = unique(literals), symbols = unique(symbols))
+}
+
 #' Robust Path Hashing
 #' @keywords internal
 .get_path_hash <- function(path, file_pattern = NULL, algo = "xxhash64") {
@@ -810,7 +839,8 @@ cacheFile <- function(cache_dir       = NULL,
     # Sync Graph from disk on init
     cacheTree_sync(cache_dir)
     ast_deps <- .scan_ast_deps(body(f))
-    
+    ast_path_specs <- .find_path_specs(body(f))
+
     # The actual wrapped function
     wrapper <- function(..., .load = TRUE, .force = FALSE, .skip_save = FALSE) {
       # --- 1. CAPTURE & CANONICALIZE ARGUMENTS ---
@@ -881,6 +911,20 @@ cacheFile <- function(cache_dir       = NULL,
         explicit_vars_hash <- digest::digest(depends_on_vars, algo = algo)
       }
 
+      # Hash literal paths detected by AST scan (e.g., list.files("/data"))
+      path_specs_hash <- NULL
+      if (length(ast_path_specs$literals) > 0) {
+        spec_hashes <- vapply(ast_path_specs$literals, function(p) {
+          if (file.exists(p) || dir.exists(p)) {
+            .get_path_hash(p, file_pattern = file_pattern, algo = algo)
+          } else {
+            ""
+          }
+        }, character(1L))
+        path_specs_hash <- spec_hashes[nzchar(spec_hashes)]
+        if (length(path_specs_hash) == 0) path_specs_hash <- NULL
+      }
+
       hashlist <- list(
         input_hash = input_hash,
         env_hash = env_hash,
@@ -891,7 +935,8 @@ cacheFile <- function(cache_dir       = NULL,
         dir_states = dir_states_key,
         version = version,
         explicit_deps = explicit_deps_hash,
-        explicit_vars = explicit_vars_hash
+        explicit_vars = explicit_vars_hash,
+        path_specs = path_specs_hash
       )
       
       master_key <- digest::digest(hashlist, algo = algo)
@@ -966,6 +1011,7 @@ cacheFile <- function(cache_dir       = NULL,
             if (!identical(sm$version, version))           changes <- c(changes, "version")
             if (!identical(sm$explicit_deps, explicit_deps_hash)) changes <- c(changes, "explicit file dependencies")
             if (!identical(sm$explicit_vars, explicit_vars_hash)) changes <- c(changes, "explicit variable dependencies")
+            if (!identical(sm$path_specs, path_specs_hash)) changes <- c(changes, "AST-detected path contents")
             if (length(changes) == 0) changes <- "unknown (possibly new argument combination)"
             message(sprintf("cacheR: miss for %s() -- changed: %s", fname, paste(changes, collapse = ", ")))
           } else {
