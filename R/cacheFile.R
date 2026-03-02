@@ -237,6 +237,39 @@ cacheTree_load <- function(path) {
 #'
 #' @return An \pkg{igraph} graph object (invisibly).
 #' @export
+#' Find Nodes With Changed Tracked Files
+#'
+#' For each graph node, check whether any tracked files have changed or
+#' disappeared since the cache was created.
+#'
+#' @param cache_dir Optional cache directory to sync from disk before checking.
+#' @return A named list where each element is
+#'   \code{list(node = <node>, changed_files = <character>)}.
+#' @export
+cache_tree_changed_files <- function(cache_dir = NULL) {
+  if (!is.null(cache_dir)) cacheTree_sync(cache_dir)
+  nodes_list <- as.list(.graph_cache$nodes)
+  out <- list()
+  for (nid in names(nodes_list)) {
+    nd <- nodes_list[[nid]]
+    fh <- nd$file_hashes
+    if (length(fh) == 0) next
+    changed <- character()
+    for (fp in names(fh)) {
+      if (!file.exists(fp)) {
+        changed <- c(changed, fp)
+        next
+      }
+      new_hash <- tryCatch(.fast_file_hash(fp), error = function(e) NA)
+      if (!identical(new_hash, fh[[fp]])) changed <- c(changed, fp)
+    }
+    if (length(changed) > 0)
+      out[[nid]] <- list(node = nd, changed_files = changed)
+  }
+  out
+}
+
+
 plot_cache_graph <- function(cache_dir = NULL, output = NULL,
                              highlight_stale = TRUE) {
 
@@ -273,24 +306,7 @@ plot_cache_graph <- function(cache_dir = NULL, output = NULL,
 
   stale_ids <- character()
   if (highlight_stale) {
-    # find nodes whose tracked files changed
-    for (nid in node_ids) {
-      nd <- nodes_list[[nid]]
-      fh <- nd$file_hashes
-      if (length(fh) > 0) {
-        for (fp in names(fh)) {
-          if (!file.exists(fp)) {
-            stale_ids <- c(stale_ids, nid)
-            break
-          }
-          new_hash <- tryCatch(.fast_file_hash(fp), error = function(e) NA)
-          if (!identical(new_hash, fh[[fp]])) {
-            stale_ids <- c(stale_ids, nid)
-            break
-          }
-        }
-      }
-    }
+    stale_ids <- names(cache_tree_changed_files())
   }
 
   node_colors <- vapply(seq_along(node_ids), function(i) {
@@ -333,6 +349,14 @@ plot_cache_graph <- function(cache_dir = NULL, output = NULL,
 
   igraph::E(g)$color       <- "#888888"
   igraph::E(g)$arrow.size  <- 0.5
+  # differentiate file-dependency edges (dashed) from function-call edges (solid)
+  if (length(edge_from) > 0) {
+    edge_lty <- vapply(seq_along(edge_from), function(i) {
+      nd <- nodes_list[[edge_from[i]]]
+      if (!is.null(nd$type) && nd$type == "file") 2L else 1L  # 2=dashed, 1=solid
+    }, integer(1L))
+    igraph::E(g)$lty <- edge_lty
+  }
 
   # layout
   lay <- tryCatch(
