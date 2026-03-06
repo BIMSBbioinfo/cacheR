@@ -15,8 +15,8 @@ test_that("cacheFile stores value and metadata in cache file", {
   # First call – should compute and write cache
   expect_equal(cached(10), 11)
   
-  # Filter for .rds or .qs files only, ignoring .lock files
-  files <- list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE)
+  # Filter for .rds or .qs2 files only, ignoring .lock files
+  files <- list.files(cache_dir, pattern = "\\.(rds|qs2)$", full.names = TRUE)
   expect_length(files, 1L)
 
   obj <- readRDS(files[1])
@@ -84,7 +84,7 @@ test_that("cacheInfo returns value and metadata", {
   # Generate cache
   cached(3)
 
-  files <- list.files(cache_dir, full.names = TRUE, pattern="\\.(rds|qs)$")
+  files <- list.files(cache_dir, full.names = TRUE, pattern="\\.(rds|qs2)$")
   expect_length(files, 1L)
 
   # Test cacheInfo

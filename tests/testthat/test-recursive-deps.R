@@ -79,7 +79,7 @@ test_that("cacheFile respects package boundaries (does not recurse into base/pac
 
   expect_equal(f(c(1, 2, 3)), 2)
 
-  # Count only cache files (rds/qs), ignore .lock
+  # Count only cache files (rds/qs2), ignore .lock
   backend <- getOption("cacheR.backend", "rds")
   files <- list.files(cache_dir, pattern = paste0("\\.", backend, "$"))
   expect_length(files, 1)

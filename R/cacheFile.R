@@ -833,7 +833,7 @@ cacheFile <- function(cache_dir       = NULL,
       warning("cacheR: cache directory is not writable: ", cache_dir, call. = FALSE)
     }
     cache_dir <- normalizePath(cache_dir, mustWork = FALSE)
-    backend   <- match.arg(backend, c("rds", "qs"))
+    backend   <- match.arg(backend, c("rds", "qs2"))
     if (is.null(env_vars)) env_vars <- getOption("cacheR.env_vars", NULL)
 
     # Sync Graph from disk on init
@@ -1146,7 +1146,7 @@ cachePrune <- function(cache_dir, days_old = 30) {
   if (!dir.exists(cache_dir)) return(invisible(NULL))
 
   # Prune old cache files
-  cache_files <- list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE)
+  cache_files <- list.files(cache_dir, pattern = "\\.(rds|qs2)$", full.names = TRUE)
   if (length(cache_files) > 0) {
     infos <- file.info(cache_files)
     cutoff <- Sys.time() - (days_old * 24 * 60 * 60)
@@ -1236,7 +1236,7 @@ export_targets_file <- function(path = "_targets.R") {
 .atomic_save <- function(object, path, backend) {
   tmp_path <- paste0(path, ".tmp.", paste(sample(c(letters, 0:9), 8, replace=TRUE), collapse=""))
   tryCatch({
-    if (backend == "qs") { if (!requireNamespace("qs", quietly=TRUE)) stop("qs required"); qs::qsave(object, tmp_path) } 
+    if (backend == "qs2") { if (!requireNamespace("qs2", quietly=TRUE)) stop("qs2 required"); qs2::qs_save(object, tmp_path) }
     else { saveRDS(object, tmp_path) }
     file.rename(tmp_path, path)
   }, error = function(e) {
@@ -1245,7 +1245,7 @@ export_targets_file <- function(path = "_targets.R") {
   })
 }
 .safe_load <- function(path, backend) {
-  if (backend == "qs") { if (!requireNamespace("qs", quietly=TRUE)) stop("qs required"); qs::qread(path) } 
+  if (backend == "qs2") { if (!requireNamespace("qs2", quietly=TRUE)) stop("qs2 required"); qs2::qs_read(path) }
   else { readRDS(path) }
 }
 .get_recursive_closure_hash <- function(obj, visited=NULL, algo="xxhash64", version_checker=utils::packageVersion) {

@@ -262,22 +262,22 @@ plot_cache_graph(output = "cache_graph.png")
 
 ---
 
-# 5. Using the `qs` backend for faster serialization
+# 5. Using the `qs2` backend for faster serialization
 
-For large matrices, the [`qs`](https://github.com/qsbase/qs) backend can be faster than base RDS.
+For large matrices, the [`qs2`](https://github.com/qsbase/qs2) backend can be faster than base RDS.
 
 Install it once:
 
 ```{r, eval=FALSE}
-install.packages("qs")
+install.packages("qs2")
 ```
 
-Then create a cached function with `backend = "qs"`:
+Then create a cached function with `backend = "qs2"`:
 
 ```{r}
-cached_cor_qs <- cacheFile(
+cached_cor_qs2 <- cacheFile(
   cache_dir = cache_dir,
-  backend   = "qs"
+  backend   = "qs2"
 ) %@% function(mat) {
   cor_with_moments(mat)
 }
@@ -289,14 +289,14 @@ Compare timings:
 set.seed(999)
 mat_big <- matrix(rnorm(500 * 50), ncol = 50)
 
-system.time(r1 <- cached_cor_qs(mat_big))
-system.time(r2 <- cached_cor_qs(mat_big))
+system.time(r1 <- cached_cor_qs2(mat_big))
+system.time(r2 <- cached_cor_qs2(mat_big))
 
 identical(r1$cor, r2$cor)
 list.files(cache_dir, recursive = TRUE)
 ```
 
-You should see some `.qs` files in the cache directory.
+You should see some `.qs2` files in the cache directory.
 
 ---
 

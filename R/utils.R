@@ -6,7 +6,7 @@
 #' file was cached, checking the arguments used to generate it, or auditing 
 #' creation times.
 #'
-#' @param file_path A character string specifying the path to the `.rds` or `.qs` 
+#' @param file_path A character string specifying the path to the `.rds` or `.qs2`
 #'   cache file.
 #'
 #' @return A list containing two elements:
@@ -29,10 +29,10 @@ cacheInfo <- function(file_path) {
   if (!file.exists(file_path)) stop("Cache file not found: ", file_path)
   
   # Determine backend based on extension (simple heuristic)
-  is_qs <- grepl("\\.qs$", file_path, ignore.case = TRUE)
-  
-  obj <- if (is_qs && requireNamespace("qs", quietly = TRUE)) {
-    qs::qread(file_path)
+  is_qs2 <- grepl("\\.qs2$", file_path, ignore.case = TRUE)
+
+  obj <- if (is_qs2 && requireNamespace("qs2", quietly = TRUE)) {
+    qs2::qs_read(file_path)
   } else {
     readRDS(file_path)
   }
@@ -87,7 +87,7 @@ cacheList <- function(cache_dir) {
     return(data.frame())
   }
 
-  files <- list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE)
+  files <- list.files(cache_dir, pattern = "\\.(rds|qs2)$", full.names = TRUE)
   
   if (length(files) == 0) return(data.frame())
   
@@ -139,7 +139,7 @@ cacheList <- function(cache_dir) {
 cache_stats <- function(cache_dir) {
   if (!dir.exists(cache_dir)) stop("Cache directory not found: ", cache_dir)
 
-  files <- list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE)
+  files <- list.files(cache_dir, pattern = "\\.(rds|qs2)$", full.names = TRUE)
   # Exclude graph.rds
   files <- files[!grepl("^graph\\.rds$", basename(files))]
 

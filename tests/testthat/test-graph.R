@@ -1,7 +1,7 @@
 test_that("helpers: count cache artifacts", {
   count_cache_files <- function(cache_dir) {
     # Only count final cache objects, not locks/tmp
-    length(list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE))
+    length(list.files(cache_dir, pattern = "\\.(rds|qs2)$", full.names = TRUE))
   }
   expect_true(is.function(count_cache_files))
 })
@@ -152,7 +152,7 @@ test_that("complex graph export: two Y-shapes merging into a final step", {
 test_that("helpers: count cache artifacts", {
   count_cache_files <- function(cache_dir) {
     # Only count final cache objects, not locks/tmp
-    length(list.files(cache_dir, pattern = "\\.(rds|qs)$", full.names = TRUE))
+    length(list.files(cache_dir, pattern = "\\.(rds|qs2)$", full.names = TRUE))
   }
   expect_true(is.function(count_cache_files))
 })

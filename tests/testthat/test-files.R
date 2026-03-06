@@ -12,7 +12,7 @@ reset_if_needed <- function() {
 # --------------------------------------------------------#
 # Helper: Count cache entry files, excluding graph.rds
 # --------------------------------------------------------#
-count_cache_entries <- function(cache_dir, backend_pattern = "\\.(rds|qs)$") {
+count_cache_entries <- function(cache_dir, backend_pattern = "\\.(rds|qs2)$") {
   files <- list.files(cache_dir, pattern = backend_pattern)
   length(files[!grepl("^graph\\.rds", files)])
 }
@@ -923,7 +923,7 @@ test_that("Vector of file paths invalidates cache when any file changes", {
   on.exit(unlink(c(file1, file2)), add = TRUE)
 
   # Exclude graph.rds from count
-  count_cache <- function(d) length(grep("^graph\\.", list.files(d, pattern = "\\.(rds|qs)$"), invert = TRUE, value = TRUE))
+  count_cache <- function(d) length(grep("^graph\\.", list.files(d, pattern = "\\.(rds|qs2)$"), invert = TRUE, value = TRUE))
 
   f <- cacheFile(cache_dir = cache_dir) %@% function(paths) {
     paste(vapply(paths, function(p) readLines(p, warn = FALSE), character(1)), collapse = "|")
@@ -954,7 +954,7 @@ test_that("Vector of mixed file paths and regular strings invalidates on file ch
   on.exit(unlink(file1), add = TRUE)
 
   # Exclude graph.rds from count
-  count_cache <- function(d) length(grep("^graph\\.", list.files(d, pattern = "\\.(rds|qs)$"), invert = TRUE, value = TRUE))
+  count_cache <- function(d) length(grep("^graph\\.", list.files(d, pattern = "\\.(rds|qs2)$"), invert = TRUE, value = TRUE))
 
   f <- cacheFile(cache_dir = cache_dir) %@% function(items) {
     paste(items, collapse = ",")
@@ -987,7 +987,7 @@ test_that("Vector of file paths works with hash_file_paths = FALSE (portable mod
   file_B <- file.path(dir_B, "data.txt"); writeLines("SAME", file_B)
 
   # Exclude graph.rds from count
-  count_cache <- function(d) length(grep("^graph\\.", list.files(d, pattern = "\\.(rds|qs)$"), invert = TRUE, value = TRUE))
+  count_cache <- function(d) length(grep("^graph\\.", list.files(d, pattern = "\\.(rds|qs2)$"), invert = TRUE, value = TRUE))
 
   cache_dir <- file.path(base_dir, "cache")
 
@@ -1023,7 +1023,7 @@ test_that("Vector of directory paths invalidates when dir content changes", {
   file.create(file.path(dir2, "b.txt"))
 
   # Exclude graph.rds from count
-  count_cache <- function(d) length(grep("^graph\\.", list.files(d, pattern = "\\.(rds|qs)$"), invert = TRUE, value = TRUE))
+  count_cache <- function(d) length(grep("^graph\\.", list.files(d, pattern = "\\.(rds|qs2)$"), invert = TRUE, value = TRUE))
 
   f <- cacheFile(cache_dir = cache_dir) %@% function(dirs) {
     sum(vapply(dirs, function(d) length(list.files(d)), integer(1)))

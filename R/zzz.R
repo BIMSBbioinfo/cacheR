@@ -42,12 +42,12 @@
 
   # 2. Set defaults for anything still unset
   if (is.null(getOption("cacheR.backend"))) {
-    if (requireNamespace("qs", quietly = TRUE)) {
-      options(cacheR.backend = "qs")
+    if (requireNamespace("qs2", quietly = TRUE)) {
+      options(cacheR.backend = "qs2")
     } else {
       packageStartupMessage(
-        "Package 'qs' not installed; using RDS backend.\n",
-        "Install qs for faster caching: install.packages('qs')"
+        "Package 'qs2' not installed; using RDS backend.\n",
+        "Install qs2 for faster caching: install.packages('qs2')"
       )
       options(cacheR.backend = "rds")
     }

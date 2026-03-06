@@ -1,7 +1,7 @@
 # --------------------------------------------------------#
 # Helper: Count cache entry files, excluding graph.rds
 # --------------------------------------------------------#
-count_cache_entries <- function(cache_dir, backend_pattern = "\\.(rds|qs)$") {
+count_cache_entries <- function(cache_dir, backend_pattern = "\\.(rds|qs2)$") {
   files <- list.files(cache_dir, pattern = backend_pattern)
   length(files[!grepl("^graph\\.rds", files)])
 }
@@ -112,28 +112,28 @@ test_that("cacheFile tracks multiple dir arguments and vector paths", {
 })
 
 # --------------------------------------------------------#
-test_that("cacheFile works with 'qs' backend", {
-  skip_if_not_installed("qs")
+test_that("cacheFile works with 'qs2' backend", {
+  skip_if_not_installed("qs2")
   if (exists("cacheTree_reset", mode = "function")) cacheTree_reset()
 
-  cache_dir <- file.path(tempdir(), "cache_qs_backend")
+  cache_dir <- file.path(tempdir(), "cache_qs2_backend")
   unlink(cache_dir, recursive = TRUE)
   dir.create(cache_dir, showWarnings = FALSE)
 
-  f <- cacheFile(cache_dir, backend = "qs") %@% function(x) {
+  f <- cacheFile(cache_dir, backend = "qs2") %@% function(x) {
     x * 2
   }
 
   res <- f(10)
   expect_equal(res, 20)
 
-  # Verify the file extension is actually .qs
+  # Verify the file extension is actually .qs2
   files <- list.files(cache_dir)
-  expect_true(any(grepl("\\.qs$", files)))
-  
+  expect_true(any(grepl("\\.qs2$", files)))
+
   # Verify we can load it back manually
   cache_path <- file.path(cache_dir, files[1])
-  loaded <- qs::qread(cache_path)
+  loaded <- qs2::qs_read(cache_path)
   expect_equal(loaded$value, 20)
 })
 
@@ -297,11 +297,11 @@ test_that("backend selection works", {
   cached_rds(1)
   expect_true(any(grepl("\\.rds$", list.files(cache_dir))))
   
-  # QS
-  if (requireNamespace("qs", quietly = TRUE)) {
-    cached_qs <- cacheFile(cache_dir, backend = "qs") %@% function(x) x
-    cached_qs(2)
-    expect_true(any(grepl("\\.qs$", list.files(cache_dir))))
+  # QS2
+  if (requireNamespace("qs2", quietly = TRUE)) {
+    cached_qs2 <- cacheFile(cache_dir, backend = "qs2") %@% function(x) x
+    cached_qs2(2)
+    expect_true(any(grepl("\\.qs2$", list.files(cache_dir))))
   }
 })
 
@@ -1507,7 +1507,7 @@ test_that("cache_stats returns correct aggregate statistics", {
   st2 <- cache_stats(tmp)
   expect_equal(st2$n_entries, 3L)
   # Files are small, so total_size_mb may round to 0 — check raw file sizes instead
-  files <- list.files(tmp, pattern = "\\.(rds|qs)$", full.names = TRUE)
+  files <- list.files(tmp, pattern = "\\.(rds|qs2)$", full.names = TRUE)
   files <- files[!grepl("graph\\.rds$", files)]
   expect_true(sum(file.size(files)) > 0)
   expect_true(!is.na(st2$oldest))
@@ -1616,7 +1616,7 @@ test_that(".load_cacheR_config does not override existing options", {
   on.exit(unlink(tmp, recursive = TRUE))
 
   yml_path <- file.path(tmp, ".cacheR.yml")
-  writeLines("backend: qs", yml_path)
+  writeLines("backend: qs2", yml_path)
 
   withr::with_options(list(cacheR.backend = "rds"), {
     cacheR:::.load_cacheR_config(yml_path)

@@ -21,7 +21,7 @@ Imports:
     digest,
     tools,
     codetools,
-    qs,
+    qs2,
     compiler,
     filelock
 Suggests:
