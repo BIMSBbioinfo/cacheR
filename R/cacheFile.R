@@ -220,23 +220,6 @@ cacheTree_load <- function(path) {
   invisible(TRUE)
 }
 
-#' Plot the Cache Dependency Graph
-#'
-#' Visualise the current in-memory cache tree as a directed graph.
-#' Requires the \pkg{igraph} package (listed in Suggests).
-#'
-#' @param cache_dir Optional cache directory.  When provided the graph is
-#'   first synchronised from disk via \code{\link{cacheTree_sync}}.
-#' @param output Optional file path (e.g. \code{"graph.png"} or
-#'   \code{"graph.pdf"}).
-#'   If \code{NULL} (the default), the graph is plotted to the current
-#'   graphics device.
-#' @param highlight_stale Logical.
-#'   If \code{TRUE} (default), nodes whose tracked files have changed
-#'   on disk are coloured amber.
-#'
-#' @return An \pkg{igraph} graph object (invisibly).
-#' @export
 #' Find Nodes With Changed Tracked Files
 #'
 #' For each graph node, check whether any tracked files have changed or
@@ -270,6 +253,19 @@ cache_tree_changed_files <- function(cache_dir = NULL) {
 }
 
 
+#' Visualise the Cache Tree as a Directed Graph
+#'
+#' Requires the \pkg{igraph} package (listed in Suggests).
+#'
+#' @param cache_dir Optional cache directory. When provided the graph is
+#'   first synchronised from disk via \code{\link{cacheTree_sync}}.
+#' @param output Optional file path (e.g. \code{"graph.png"} or
+#'   \code{"graph.pdf"}). If \code{NULL} (default), plots to the current
+#'   graphics device.
+#' @param highlight_stale Logical. If \code{TRUE} (default), nodes whose
+#'   tracked files have changed on disk are coloured amber.
+#' @return An \pkg{igraph} graph object (invisibly).
+#' @export
 plot_cache_graph <- function(cache_dir = NULL, output = NULL,
                              highlight_stale = TRUE) {
 

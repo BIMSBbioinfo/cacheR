@@ -7,7 +7,7 @@
 cacheInfo(file_path)
 }
 \arguments{
-\item{file_path}{A character string specifying the path to the \code{.rds} or \code{.qs}
+\item{file_path}{A character string specifying the path to the \code{.rds} or \code{.qs2}
 cache file.}
 }
 \value{
