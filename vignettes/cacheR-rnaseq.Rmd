@@ -147,8 +147,8 @@ counts1 <- cached_read_counts(counts_dir, sample_table)
 
 # Second run: same arguments and same files → uses cache 
 
-```{r, eval=TRUE}
-counts2 <- cached_read_counts(counts_dir, sample_table) 
+```{r}
+counts2 <- cached_read_counts(counts_dir, sample_table)
 
 identical(counts1, counts2)
 ```
