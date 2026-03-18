@@ -1,7 +1,7 @@
 
 <!-- README.md is generated from README.Rmd. Please edit README.Rmd only. -->
 
-# cacheR <img src="https://img.shields.io/badge/status-experimental-orange" align="right"/>
+# cacheR <img src="https://img.shields.io/badge/status-experimental-orange" align="right"/> <a href="http://bioinformatics.mdc-berlin.de/cacheR/"><img src="https://img.shields.io/badge/docs-pkgdown-blue" align="right"/></a>
 
 **cacheR** tracks your data and code so you don't have to
 
