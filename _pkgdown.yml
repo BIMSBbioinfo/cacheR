@@ -30,6 +30,7 @@ navbar:
     ml:
       text: Machine Learning
       href: articles/cacheR-machine_learning.html
+    articles: ~
     github:
       icon: fab fa-github
       href: https://github.com/BIMSBbioinfo/cacheR
