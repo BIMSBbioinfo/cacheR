@@ -1,6 +1,9 @@
-
 template:
   bootstrap: 5
+  bslib:
+    base_font_size: 0.9rem
+    font_size_base: 0.9
+    code-font-size: 0.85rem
 
 url: https://BIMSBbioinfo.github.io/cacheR
 
@@ -10,9 +13,21 @@ home:
 
 navbar:
   structure:
-    left:  [home, reference, articles, news]
+    left:  [home, reference, intro, rnaseq, ml]
     right: [github]
   components:
+    reference:
+      text: Reference
+      href: reference/index.html
+    intro:
+      text: Introduction
+      href: articles/cacheR-introduction.html
+    rnaseq:
+      text: RNA-seq
+      href: articles/cacheR-rnaseq.html
+    ml:
+      text: Machine Learning
+      href: articles/cacheR-machine_learning.html
     github:
       icon: fab fa-github
       href: https://github.com/BIMSBbioinfo/cacheR
