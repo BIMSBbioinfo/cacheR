@@ -12,7 +12,7 @@ home:
 
 navbar:
   structure:
-    left:  [home, reference, intro, rnaseq, ml]
+    left:  [home, reference, intro, graph, rnaseq, ml]
     right: [github]
   components:
     home:
@@ -24,6 +24,9 @@ navbar:
     intro:
       text: Introduction
       href: articles/cacheR-introduction.html
+    graph:
+      text: Graph
+      href: articles/cacheR-graph.html
     rnaseq:
       text: RNA-seq
       href: articles/cacheR-rnaseq.html
@@ -40,6 +43,10 @@ articles:
   - title: Getting started
     contents:
       - cacheR-introduction
+
+  - title: Dependency graph
+    contents:
+      - cacheR-graph
 
   - title: RNA-seq workflow example
     contents:

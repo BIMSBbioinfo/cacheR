@@ -1,0 +1,252 @@
+---
+title: "Cache Dependency Graph — Deep Dive"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Cache Dependency Graph — Deep Dive}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+cacheR automatically tracks **which cached function called which** and **which files each depends on**. This vignette explores the full graph API: building, inspecting, persisting, and visualising the dependency DAG.
+
+## 1. Building a Pipeline
+
+When a cached function calls another cached function, cacheR records the parent → child relationship automatically.
+
+```{r}
+library(cacheR)
+
+cache_dir <- file.path(tempdir(), "graph_demo")
+if (dir.exists(cache_dir)) unlink(cache_dir, recursive = TRUE)
+cacheTree_reset()
+
+load_counts <- cacheFile(cache_dir, backend = "rds") %@% function(path) {
+  list(genes = c("TP53", "BRCA1", "EGFR"), counts = c(100, 250, 80))
+}
+
+normalize <- cacheFile(cache_dir, backend = "rds") %@% function(counts) {
+  total <- sum(counts$counts)
+  setNames(counts$counts / total, counts$genes)
+}
+
+top_genes <- cacheFile(cache_dir, backend = "rds") %@% function(normed, n = 2) {
+  head(sort(normed, decreasing = TRUE), n)
+}
+
+pipeline <- cacheFile(cache_dir, backend = "rds") %@% function(input_path, n = 2) {
+  raw <- load_counts(input_path)
+  normed <- normalize(raw)
+  top_genes(normed, n = n)
+}
+
+result <- pipeline("samples/counts.csv")
+print(result)
+```
+
+## 2. Inspecting Nodes
+
+Each node stores: function name, hash, parent/child links, tracked files, and cache file path.
+
+```{r}
+nodes <- cacheTree_nodes()
+cat(sprintf("Total nodes: %d\n\n", length(nodes)))
+
+for (nid in names(nodes)) {
+  nd <- nodes[[nid]]
+  cat(sprintf("Node: %s\n", nd$fname))
+  cat(sprintf("  ID:       %s\n", nid))
+  cat(sprintf("  Parents:  %s\n", paste(nd$parents, collapse = ", ")))
+  cat(sprintf("  Children: %s\n", paste(nd$children, collapse = ", ")))
+  cat(sprintf("  Files:    %s\n", paste(nd$files, collapse = ", ")))
+  cat("\n")
+}
+```
+
+## 3. File Tracking with `track_file()`
+
+`track_file(path)` registers an explicit file dependency on the current graph node.
+
+```{r}
+cacheTree_reset()
+cache_dir2 <- file.path(tempdir(), "graph_demo_files")
+if (dir.exists(cache_dir2)) unlink(cache_dir2, recursive = TRUE)
+
+data_file <- file.path(tempdir(), "demo_data.tsv")
+writeLines("gene\tcount\nTP53\t100\nBRCA1\t250", data_file)
+
+read_data <- cacheFile(cache_dir2, backend = "rds") %@% function(path) {
+  track_file(path)
+  read.delim(path, sep = "\t")
+}
+
+summarize_data <- cacheFile(cache_dir2, backend = "rds") %@% function(path) {
+  df <- read_data(path)
+  setNames(df$count, df$gene)
+}
+
+print(summarize_data(data_file))
+
+# Show tracked files
+nodes <- cacheTree_nodes()
+for (nid in names(nodes)) {
+  nd <- nodes[[nid]]
+  fh <- nd$file_hashes
+  if (length(fh) > 0) {
+    cat(sprintf("\n%s tracks %d file(s):\n", nd$fname, length(fh)))
+    for (fp in names(fh)) {
+      cat(sprintf("  %s  hash=%s...\n", fp, substr(fh[[fp]], 1, 16)))
+    }
+  }
+}
+```
+
+## 4. Staleness Detection
+
+`cache_tree_changed_files()` compares stored hashes against current disk state.
+
+```{r}
+# Before modification
+stale <- cache_tree_changed_files()
+cat(sprintf("Stale nodes before edit: %d\n", length(stale)))
+
+# Modify the file
+writeLines("gene\tcount\nTP53\t100\nBRCA1\t250\nEGFR\t500", data_file)
+
+stale <- cache_tree_changed_files()
+cat(sprintf("Stale nodes after edit:  %d\n", length(stale)))
+for (nid in names(stale)) {
+  cat(sprintf("  %s: %s\n", stale[[nid]]$node$fname,
+      paste(stale[[nid]]$changed_files, collapse = ", ")))
+}
+```
+
+## 5. Visualisation
+
+`plot_cache_graph()` renders the DAG with igraph.
+
+- **Navy** = cached and up-to-date
+- **Amber** = stale (tracked file changed)
+- **Blue** = tracked file node
+- **Gray** = cache file missing
+
+```{r}
+if (requireNamespace("igraph", quietly = TRUE)) {
+  plot_cache_graph()
+  title("Cache Graph — after file modification")
+}
+```
+
+Save to file:
+
+```{r, eval=FALSE}
+plot_cache_graph(output = "my_graph.png")
+```
+
+## 6. Graph Persistence
+
+The graph can be saved and loaded independently of the cache files.
+
+```{r}
+save_path <- file.path(tempdir(), "my_graph.rds")
+
+# Save
+cacheTree_save(save_path)
+cat(sprintf("Saved %d nodes to %s\n", length(cacheTree_nodes()), save_path))
+
+# Reset and verify
+cacheTree_reset()
+cat(sprintf("After reset: %d nodes\n", length(cacheTree_nodes())))
+
+# Load back
+cacheTree_load(save_path)
+cat(sprintf("After load:  %d nodes\n", length(cacheTree_nodes())))
+
+# Sync merges disk graph into memory (non-destructive)
+cacheTree_reset()
+cacheTree_sync(cache_dir2)
+cat(sprintf("After sync:  %d nodes\n", length(cacheTree_nodes())))
+```
+
+## 7. Querying by File
+
+`cacheTree_for_file(path)` finds all nodes that depend on a specific file.
+
+```{r}
+dependents <- cacheTree_for_file(normalizePath(data_file))
+cat(sprintf("Nodes depending on %s:\n", basename(data_file)))
+for (nid in names(dependents)) {
+  cat(sprintf("  %s\n", dependents[[nid]]$fname))
+}
+```
+
+## 8. Complex DAG
+
+Build a diamond dependency: two branches merge into a final step.
+
+```{r}
+cacheTree_reset()
+cache_dir3 <- file.path(tempdir(), "graph_demo_diamond")
+if (dir.exists(cache_dir3)) unlink(cache_dir3, recursive = TRUE)
+
+fetch_expression <- cacheFile(cache_dir3, backend = "rds") %@% function(sample) {
+  c(TP53 = 10, BRCA1 = 25, EGFR = 8)
+}
+
+fetch_mutations <- cacheFile(cache_dir3, backend = "rds") %@% function(sample) {
+  c(TP53 = TRUE, BRCA1 = FALSE, EGFR = TRUE)
+}
+
+branch_expression <- cacheFile(cache_dir3, backend = "rds") %@% function(sample) {
+  expr <- fetch_expression(sample)
+  expr[expr > 9]
+}
+
+branch_mutations <- cacheFile(cache_dir3, backend = "rds") %@% function(sample) {
+  muts <- fetch_mutations(sample)
+  names(muts[muts == TRUE])
+}
+
+integrate <- cacheFile(cache_dir3, backend = "rds") %@% function(sample) {
+  high_expr <- branch_expression(sample)
+  mutated <- branch_mutations(sample)
+  high_expr[names(high_expr) %in% mutated]
+}
+
+result <- integrate("patient_001")
+cat("Genes with high expression AND mutations:\n")
+print(result)
+```
+
+```{r}
+cat(sprintf("\nNodes: %d\n", length(cacheTree_nodes())))
+for (nid in names(cacheTree_nodes())) {
+  nd <- cacheTree_nodes()[[nid]]
+  cat(sprintf("  %-25s  children=%d  parents=%d\n",
+      nd$fname, length(nd$children), length(nd$parents)))
+}
+```
+
+```{r}
+if (requireNamespace("igraph", quietly = TRUE)) {
+  plot_cache_graph()
+  title("Diamond DAG — expression + mutation integration")
+}
+```
+
+## Cleanup
+
+```{r}
+unlink(c(cache_dir, cache_dir2, cache_dir3, data_file, save_path), recursive = TRUE)
+```
