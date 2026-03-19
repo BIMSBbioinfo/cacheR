@@ -245,8 +245,75 @@ if (requireNamespace("igraph", quietly = TRUE)) {
 }
 ```
 
+## 9. Graph Utilities
+
+### List all tracked files
+
+`cache_tree_files()` returns a sorted vector of every file tracked across all nodes:
+
+```{r}
+tracked <- cache_tree_files()
+cat(sprintf("Tracked files (%d):\n", length(tracked)))
+for (f in tracked) cat(sprintf("  %s\n", f))
+```
+
+### Print a summary
+
+`cache_tree_summary()` gives a quick overview of the full graph:
+
+```{r}
+cache_tree_summary()
+```
+
+## 10. Graph Export
+
+### JSON
+
+`cache_tree_to_json()` exports nodes and edges as portable JSON — easy to
+load in Python, JavaScript, or any downstream tool:
+
+```{r}
+json_path <- file.path(tempdir(), "graph.json")
+cache_tree_to_json(json_path)
+cat(readLines(json_path, n = 20), sep = "\n")
+cat("...\n")
+```
+
+### Graphviz DOT
+
+`cache_tree_to_dot()` exports the graph in DOT format for rendering with
+`dot`, `neato`, or any Graphviz-compatible tool:
+
+```{r}
+dot_path <- file.path(tempdir(), "graph.dot")
+cache_tree_to_dot(dot_path)
+cat(readLines(dot_path), sep = "\n")
+```
+
+You can render this with Graphviz:
+
+```{bash, eval=FALSE}
+dot -Tpng graph.dot -o graph.png
+```
+
+### targets
+
+`export_targets_file()` converts the cacheR graph into a
+[targets](https://docs.ropensci.org/targets/) pipeline script.
+This is useful when you want to move from interactive exploration to a
+production pipeline:
+
+```{r}
+targets_path <- file.path(tempdir(), "_targets.R")
+export_targets_file(targets_path)
+cat(readLines(targets_path), sep = "\n")
+```
+
+The generated `_targets.R` can be used directly with `targets::tar_make()`.
+
 ## Cleanup
 
 ```{r}
-unlink(c(cache_dir, cache_dir2, cache_dir3, data_file, save_path), recursive = TRUE)
+unlink(c(cache_dir, cache_dir2, cache_dir3, data_file, save_path,
+         json_path, dot_path, targets_path), recursive = TRUE)
 ```
