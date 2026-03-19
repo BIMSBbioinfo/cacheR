@@ -6,3 +6,9 @@
 ^_pkgdown\.yml$
 ^doc$
 ^Meta$
+^\.github$
+^EXPANSION_PROPOSALS\.md$
+^Rplots\.pdf$
+^NEWS\.md$
+^cacheR$
+^todo$

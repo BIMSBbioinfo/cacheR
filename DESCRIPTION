@@ -2,29 +2,31 @@ Package: cacheR
 Type: Package
 Title: Recursive File-Based Caching With Call Tree Introspection
 Version: 1.0.0
-Authors@R: 
-    person("Vedran", "Franke", 
-           email = "vedran.franke@gmail.com", 
+Authors@R:
+    person("Vedran", "Franke",
+           email = "vedran.franke@gmail.com",
            role = c("aut", "cre"))
-Description: 
-    Tools for caching function results to disk while tracking 
-    recursive parent-child relationships between cached calls. 
-    Provides utilities to inspect the cache tree for debugging 
+Description:
+    Tools for caching function results to disk while tracking
+    recursive parent-child relationships between cached calls.
+    Provides utilities to inspect the cache tree for debugging
     and provenance.
-License: MIT + file LICENSE
+License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
-Depends: 
+URL: https://github.com/BIMSBbioinfo/cacheR,
+    http://bioinformatics.mdc-berlin.de/cacheR/
+BugReports: https://github.com/BIMSBbioinfo/cacheR/issues
+Depends:
     R (>= 4.1)
 Imports:
     digest,
     tools,
     codetools,
-    qs2,
-    compiler,
     filelock
 Suggests:
+    qs2,
     igraph,
     mockery,
     testthat (>= 3.0.0),

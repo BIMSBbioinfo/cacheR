@@ -119,6 +119,8 @@ cache_tree_to_json <- function(path = NULL) {
     list(from = e$from, to = e$to)
   })
   obj <- list(nodes = export_nodes, edges = export_edges)
+  if (!requireNamespace("jsonlite", quietly = TRUE))
+    stop("jsonlite is required for JSON export. Install with: install.packages('jsonlite')", call. = FALSE)
   txt <- jsonlite::toJSON(obj, auto_unbox = TRUE, pretty = TRUE)
   if (!is.null(path)) writeLines(txt, path)
   invisible(txt)
