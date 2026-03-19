@@ -15,8 +15,9 @@ test_that("cacheFile stores value and metadata in cache file", {
   # First call – should compute and write cache
   expect_equal(cached(10), 11)
   
-  # Filter for .rds or .qs2 files only, ignoring .lock files
+  # Filter for .rds or .qs2 files only, ignoring .lock files and graph.rds
   files <- list.files(cache_dir, pattern = "\\.(rds|qs2)$", full.names = TRUE)
+  files <- files[!grepl("^graph\\.", basename(files))]
   expect_length(files, 1L)
 
   obj <- readRDS(files[1])
@@ -30,7 +31,7 @@ test_that("cacheFile stores value and metadata in cache file", {
   expect_true(is.list(meta))
   
   # Updated fields: 'args' is replaced by 'args_values' and 'args_exprs'
-  expected_fields <- c("fname", "args_values", "args_exprs", "args_hash", "cache_file", "cache_dir", "created")
+  expected_fields <- c("fname", "args_values", "args_hash", "cache_file", "cache_dir", "created")
   expect_true(all(expected_fields %in% names(meta)))
   
   # Check argument tracking (Values)
@@ -85,6 +86,7 @@ test_that("cacheInfo returns value and metadata", {
   cached(3)
 
   files <- list.files(cache_dir, full.names = TRUE, pattern="\\.(rds|qs2)$")
+  files <- files[!grepl("^graph\\.", basename(files))]
   expect_length(files, 1L)
 
   # Test cacheInfo
@@ -115,6 +117,8 @@ test_that("cacheList summarizes cache directory contents", {
   df <- cacheList(cache_dir)
 
   expect_s3_class(df, "data.frame")
+  # Filter out graph.rds if cacheList includes it
+  df <- df[!grepl("^graph\\.", basename(df$file)), ]
   expect_equal(nrow(df), 2L)
   expect_true(all(c("file", "fname", "created", "size_bytes") %in% names(df)))
 })

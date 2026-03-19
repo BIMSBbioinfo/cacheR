@@ -833,24 +833,44 @@ track_file <- function(path, cache_dir = NULL) {
 
 #' Helper: Hash ONLY the globals used by the function (Scope Isolation)
 #' @keywords internal
-.get_scoped_env_hash <- function(fun) {
+.get_scoped_env_hash <- function(fun, .visited = NULL) {
   if (!requireNamespace("codetools", quietly = TRUE)) {
-    # warning("codetools not installed; falling back to hashing full environment")
     return(digest::digest(environment(fun)))
   }
-  
-  used_vars <- codetools::findGlobals(fun, merge = FALSE)$variables
+
+  # Cycle detection: track visited function identities
+  fun_id <- paste(capture.output(print.default(fun)), collapse = "\n")
+  fun_id <- digest::digest(fun_id, algo = "xxhash64")
+  if (fun_id %in% .visited) return("CYCLE")
+  .visited <- c(.visited, fun_id)
+
+  globals <- codetools::findGlobals(fun, merge = FALSE)
+  used_names <- unique(c(globals$variables, globals$functions))
   env <- environment(fun)
   captured_globals <- list()
-  
-  for (var in used_vars) {
+
+  for (var in used_names) {
     if (exists(var, envir = env, inherits = TRUE)) {
-      val <- get(var, envir = env, inherits = TRUE)
-      if (is.function(val) && !is.null(environment(val))) {
-        pkg_name <- environmentName(environment(val))
-        if (pkg_name == "base" || pkg_name == "package:base") next
+      val <- tryCatch(get(var, envir = env, inherits = TRUE), error = function(e) NULL)
+      if (is.null(val)) next
+      if (is.function(val)) {
+        fun_env <- environment(val)
+        if (is.null(fun_env)) next  # primitive — skip
+        pkg_name <- environmentName(fun_env)
+        if (nzchar(pkg_name) && pkg_name != "" && pkg_name != "R_GlobalEnv") {
+          next
+        }
+        captured_globals[[var]] <- tryCatch(
+          list(
+            body = body(val),
+            formals = formals(val),
+            env_hash = .get_scoped_env_hash(val, .visited = .visited)
+          ),
+          error = function(e) digest::digest(deparse(body(val)))
+        )
+      } else {
+        captured_globals[[var]] <- val
       }
-      captured_globals[[var]] <- val
     }
   }
   return(digest::digest(captured_globals))
