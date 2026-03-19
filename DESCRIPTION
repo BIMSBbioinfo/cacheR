@@ -34,7 +34,8 @@ Suggests:
     DBI,
     RSQLite,
     withr,
-    yaml
+    yaml,
+    jsonlite
 Config/testthat/edition: 3
 LazyData: true
 VignetteBuilder: knitr

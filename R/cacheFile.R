@@ -43,6 +43,117 @@ cacheTree_nodes <- function() {
   as.list(.graph_cache$nodes)
 }
 
+#' List All Tracked Files
+#'
+#' Returns a sorted character vector of all file paths tracked across
+#' all graph nodes.
+#'
+#' @return A character vector of unique file paths.
+#' @export
+cache_tree_files <- function() {
+  nodes_list <- as.list(.graph_cache$nodes)
+  all_files <- character()
+  for (nd in nodes_list) {
+    all_files <- c(all_files, nd$files, names(nd$file_hashes))
+  }
+  sort(unique(all_files))
+}
+
+#' Summarise the Cache Tree
+#'
+#' Prints a human-readable summary of all graph nodes showing
+#' function name, node ID, parents, children, and tracked files.
+#'
+#' @return The summary string (invisibly).
+#' @export
+cache_tree_summary <- function() {
+  nodes_list <- as.list(.graph_cache$nodes)
+  lines <- character()
+  lines <- c(lines, sprintf("Cache tree: %d node(s)\n", length(nodes_list)))
+  for (nid in names(nodes_list)) {
+    nd <- nodes_list[[nid]]
+    fname <- if (!is.null(nd$fname)) nd$fname else "?"
+    parents <- nd$parents
+    children <- nd$children
+    all_files <- sort(unique(c(nd$files, names(nd$file_hashes))))
+
+    lines <- c(lines, sprintf("  %s", fname))
+    lines <- c(lines, sprintf("    id:       %s", nid))
+    if (length(parents) > 0)
+      lines <- c(lines, sprintf("    parents:  %s", paste(parents, collapse = ", ")))
+    if (length(children) > 0)
+      lines <- c(lines, sprintf("    children: %s", paste(children, collapse = ", ")))
+    if (length(all_files) > 0)
+      lines <- c(lines, sprintf("    files:    %s", paste(all_files, collapse = ", ")))
+    lines <- c(lines, "")
+  }
+  out <- paste(lines, collapse = "\n")
+  cat(out, "\n")
+  invisible(out)
+}
+
+#' Export Cache Tree as JSON
+#'
+#' Returns the cache tree as a JSON string. If \code{path} is given,
+#' also writes to file.
+#'
+#' @param path Optional file path to write JSON to.
+#' @return JSON string (invisibly).
+#' @export
+cache_tree_to_json <- function(path = NULL) {
+  nodes_list <- as.list(.graph_cache$nodes)
+  edges_list <- as.list(.graph_cache$edges)
+  export_nodes <- lapply(names(nodes_list), function(nid) {
+    nd <- nodes_list[[nid]]
+    list(
+      id = nid,
+      fname = nd$fname,
+      outfile = nd$outfile,
+      parents = as.list(nd$parents),
+      children = as.list(nd$children),
+      files = as.list(nd$files),
+      file_hashes = as.list(nd$file_hashes)
+    )
+  })
+  export_edges <- lapply(edges_list, function(e) {
+    list(from = e$from, to = e$to)
+  })
+  obj <- list(nodes = export_nodes, edges = export_edges)
+  txt <- jsonlite::toJSON(obj, auto_unbox = TRUE, pretty = TRUE)
+  if (!is.null(path)) writeLines(txt, path)
+  invisible(txt)
+}
+
+#' Export Cache Tree as Graphviz DOT
+#'
+#' Returns the cache tree in Graphviz DOT format. If \code{path} is
+#' given, also writes to file.
+#'
+#' @param path Optional file path to write DOT to.
+#' @return DOT string (invisibly).
+#' @export
+cache_tree_to_dot <- function(path = NULL) {
+  nodes_list <- as.list(.graph_cache$nodes)
+  edges_list <- as.list(.graph_cache$edges)
+  lines <- c(
+    "digraph cache_tree {",
+    "  rankdir=TB;",
+    '  node [shape=box, style=filled, fillcolor="#1D3557", fontcolor=white, fontname="sans-serif"];'
+  )
+  for (nid in names(nodes_list)) {
+    nd <- nodes_list[[nid]]
+    label <- gsub('"', '\\\\"', nd$fname)
+    lines <- c(lines, sprintf('  "%s" [label="%s"];', nid, label))
+  }
+  for (e in edges_list) {
+    lines <- c(lines, sprintf('  "%s" -> "%s";', e$from, e$to))
+  }
+  lines <- c(lines, "}")
+  txt <- paste(lines, collapse = "\n")
+  if (!is.null(path)) writeLines(txt, path)
+  invisible(txt)
+}
+
 #' Append graph changes to disk (Persistence Layer)
 #' @keywords internal
 .append_graph_to_disk <- function(cache_dir, new_node = NULL, new_edge = NULL) {

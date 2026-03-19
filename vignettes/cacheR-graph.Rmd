@@ -144,7 +144,7 @@ for (nid in names(stale)) {
 ```{r}
 if (requireNamespace("igraph", quietly = TRUE)) {
   plot_cache_graph()
-  title("Cache Graph — after file modification")
+  mtext("Cache Graph — after file modification", side = 3, line = -1.5, cex = 1.2, font = 2)
 }
 ```
 
@@ -241,7 +241,7 @@ for (nid in names(cacheTree_nodes())) {
 ```{r}
 if (requireNamespace("igraph", quietly = TRUE)) {
   plot_cache_graph()
-  title("Diamond DAG — expression + mutation integration")
+  mtext("Diamond DAG — expression + mutation integration", side = 3, line = -1.5, cex = 1.2, font = 2)
 }
 ```
 
