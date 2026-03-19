@@ -5,6 +5,8 @@
 
 **cacheR** tracks your data and code so you don't have to
 
+Also available as a Python package: [cachepy](https://github.com/BIMSBbioinfo/cachepy)
+
 ## What does cacheR do?
 
 It automatically checks for changes in code and input data and re-runs the code if necessary.
