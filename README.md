@@ -5,7 +5,7 @@
 
 **cacheR** tracks your data and code so you don't have to
 
-Also available as a Python package: [cachepy](https://github.com/BIMSBbioinfo/cachepy)
+Also available as a Python package: [pycacher](https://github.com/BIMSBbioinfo/pycacher) (`pip install pycacher`)
 
 ## What does cacheR do?
 
