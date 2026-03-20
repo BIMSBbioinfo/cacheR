@@ -6,6 +6,12 @@
 \usage{
 export_targets_file(path = "_targets.R")
 }
+\arguments{
+\item{path}{Character path to write the targets pipeline script.}
+}
+\value{
+Invisible \code{NULL}.
+}
 \description{
 Export to targets
 }

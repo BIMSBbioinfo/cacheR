@@ -6,6 +6,12 @@
 \usage{
 decorator(f)
 }
+\arguments{
+\item{f}{A function to wrap as a decorator.}
+}
+\value{
+A decorator object (function with class \code{"decorator"}).
+}
 \description{
 Turn a function into a decorator.
 }

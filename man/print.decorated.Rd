@@ -6,6 +6,16 @@
 \usage{
 \method{print}{decorated}(x, useSource = TRUE, ...)
 }
+\arguments{
+\item{x}{A decorated function.}
+
+\item{useSource}{Logical; use source references if available.}
+
+\item{...}{Additional arguments passed to \code{print.function}.}
+}
+\value{
+Invisible \code{x}.
+}
 \description{
 Pretty-print decorated functions.
 }

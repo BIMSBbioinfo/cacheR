@@ -3,9 +3,10 @@
 #' Applies a decorator returned by [cacheFile()] to a function.
 #'
 #' @param decorator A decorator object, such as that returned by [cacheFile()].
-#' @param fun A function to decorate.
+#' @param f A function to decorate.
 #'
 #' @return A new function with caching behavior.
+#' @name grapes-at-grapes
 #' @export
 `%@%` <- function(decorator, f) {
   if (!is.function(f)) {
@@ -14,7 +15,7 @@
   UseMethod("%@%", decorator)
 }
 
-#' Fallback: object is not a decorator.
+#' @rdname grapes-at-grapes
 #' @export
 `%@%.default` <- function(decorator, f) {
   stop(
@@ -27,8 +28,7 @@
   )
 }
 
-#' Core method: apply a decorator to a function.
-#' Supports chaining: d1 %@% d2 %@% function(...) ...
+#' @rdname grapes-at-grapes
 #' @export
 `%@%.decorator` <- function(decorator, f) {
   # calls: list(decorator, f) plus possibly more if chained
@@ -61,6 +61,8 @@
 }
 
 #' Turn a function into a decorator.
+#' @param f A function to wrap as a decorator.
+#' @return A decorator object (function with class \code{"decorator"}).
 #' @export
 decorator <- function(f) {
   stopifnot(is.function(f))
@@ -74,6 +76,10 @@ decorator <- function(f) {
 decorator <- decorator(decorator)
 
 #' Pretty-print decorated functions.
+#' @param x A decorated function.
+#' @param useSource Logical; use source references if available.
+#' @param ... Additional arguments passed to \code{print.function}.
+#' @return Invisible \code{x}.
 #' @export
 print.decorated <- function(x, useSource = TRUE, ...) {
   bare_fun <- function(f) {
@@ -101,6 +107,10 @@ print.decorated <- function(x, useSource = TRUE, ...) {
 # box::register_S3_method('print', 'decorated', print.decorated)
 
 #' Attach pretty metadata to a decorated function.
+#' @param f The wrapped function.
+#' @param original The original unwrapped function.
+#' @param decorator_calls List of decorator call expressions.
+#' @return The function \code{f} with class \code{"decorated"} and metadata attributes.
 #' @export
 prettify <- function(f, original, decorator_calls) {
   # keep any existing srcref if present, otherwise use the original body
@@ -116,6 +126,8 @@ prettify <- function(f, original, decorator_calls) {
 }
 
 #' Get a "pretty" code representation for a function.
+#' @param f A decorated function.
+#' @return The source reference or body of the function.
 #' @export
 pretty_code <- function(f) {
   srcref <- attr(f, "srcref", exact = TRUE)

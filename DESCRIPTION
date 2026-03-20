@@ -24,11 +24,12 @@ Imports:
     digest,
     tools,
     codetools,
-    filelock
+    filelock,
+    methods,
+    utils
 Suggests:
     qs2,
     igraph,
-    mockery,
     testthat (>= 3.0.0),
     knitr,
     rmarkdown,
@@ -37,7 +38,8 @@ Suggests:
     RSQLite,
     withr,
     yaml,
-    jsonlite
+    jsonlite,
+    pkgload
 Config/testthat/edition: 3
 LazyData: true
 VignetteBuilder: knitr

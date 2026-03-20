@@ -45,14 +45,19 @@
     if (requireNamespace("qs2", quietly = TRUE)) {
       options(cacheR.backend = "qs2")
     } else {
-      packageStartupMessage(
-        "Package 'qs2' not installed; using RDS backend.\n",
-        "Install qs2 for faster caching: install.packages('qs2')"
-      )
       options(cacheR.backend = "rds")
     }
   }
   if (is.null(getOption("cacheR.dir"))) {
     options(cacheR.dir = file.path(getwd(), ".cacheR"))
+  }
+}
+
+.onAttach <- function(libname, pkgname) {
+  if (!requireNamespace("qs2", quietly = TRUE)) {
+    packageStartupMessage(
+      "Package 'qs2' not installed; using RDS backend.\n",
+      "Install qs2 for faster caching: install.packages('qs2')"
+    )
   }
 }

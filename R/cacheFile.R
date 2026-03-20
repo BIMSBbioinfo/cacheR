@@ -2,6 +2,13 @@
 # cacheR: Robust Disk-Backed Memoization for R
 # =========================================================================
 
+# Suppress R CMD check NOTEs for internal functions used inside closures
+#' @importFrom utils head tail capture.output
+#' @importFrom methods slotNames slot
+NULL
+
+utils::globalVariables(c(".extract_paths_recursively", ".cacheTree_register_node"))
+
 # -------------------------------------------------------------------------
 # 1. Global State
 # -------------------------------------------------------------------------
@@ -281,6 +288,8 @@ cache_tree_to_dot <- function(path = NULL) {
 }
 
 #' Find nodes associated with a specific file path
+#' @param path Character path to the file to look up.
+#' @return A list of nodes that reference the given file.
 #' @export
 cacheTree_for_file <- function(path) {
   path <- normalizePath(path, mustWork = FALSE, winslash = "/")
@@ -290,6 +299,8 @@ cacheTree_for_file <- function(path) {
 }
 
 #' Load graph from disk into memory
+#' @param cache_dir Character path to the cache directory containing \code{graph.rds}.
+#' @return Invisible \code{NULL}.
 #' @export
 cacheTree_sync <- function(cache_dir) {
   graph_file <- file.path(cache_dir, "graph.rds")
@@ -495,6 +506,9 @@ plot_cache_graph <- function(cache_dir = NULL, output = NULL,
 
 
 #' Explicitly Track a File Dependency
+#' @param path Character path to the file or directory to track.
+#' @param cache_dir Optional cache directory (unused; reserved for future use).
+#' @return The normalised path (invisibly).
 #' @export
 track_file <- function(path, cache_dir = NULL) {
   path_norm <- normalizePath(path, mustWork = FALSE, winslash = "/")
@@ -940,6 +954,31 @@ cacheR_default_dir <- function() {
 
 
 #' Create a caching decorator
+#'
+#' Returns a decorator (for use with \code{\%@\%}) that wraps a function with
+#' disk-backed memoization.
+#'
+#' @param cache_dir Character path to the cache directory.
+#'   Defaults to \code{cacheR_default_dir()}.
+#' @param backend Character string selecting the serialization backend,
+#'   either \code{"rds"} or \code{"qs2"}.
+#' @param ignore_args Character vector of argument names to exclude from
+#'   the cache key.
+#' @param file_pattern Optional regex pattern used to filter files when
+#'   hashing directory contents.
+#' @param env_vars Character vector of environment variable names to include
+#'   in the cache key.
+#' @param hash_file_paths Logical; if \code{TRUE} (default), file path arguments
+#'   are normalised and their content hashed as part of the cache key.
+#' @param algo Character string specifying the hashing algorithm passed to
+#'   \code{\link[digest]{digest}}. Default \code{"xxhash64"}.
+#' @param version Optional version tag appended to the cache key so that
+#'   cached results can be manually invalidated.
+#' @param depends_on_files Character vector of file paths whose content
+#'   should be included in the cache key.
+#' @param depends_on_vars Character vector of global variable names whose
+#'   values should be included in the cache key.
+#' @return A decorator function suitable for use with \code{\%@\%}.
 #' @export
 cacheFile <- function(cache_dir       = NULL,
                       backend         = getOption("cacheR.backend", "rds"),
@@ -1270,6 +1309,14 @@ cacheFile <- function(cache_dir       = NULL,
 # -------------------------------------------------------------------------
 
 #' Prune old cache files
+#'
+#' Removes cached result files older than a given number of days and cleans
+#' up stale lock, temp, and computing sentinel files.
+#'
+#' @param cache_dir Character path to the cache directory to prune.
+#' @param days_old Numeric; cache files with modification times older than
+#'   this many days are deleted. Default \code{30}.
+#' @return Invisible \code{NULL}.
 #' @export
 cachePrune <- function(cache_dir, days_old = 30) {
   if (!dir.exists(cache_dir)) return(invisible(NULL))
@@ -1331,6 +1378,8 @@ cache_file_state_clear <- function() {
 }
 
 #' Export to targets
+#' @param path Character path to write the targets pipeline script.
+#' @return Invisible \code{NULL}.
 #' @export
 export_targets_file <- function(path = "_targets.R") {
   nodes_env <- .graph_cache$nodes

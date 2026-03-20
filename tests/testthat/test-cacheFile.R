@@ -444,8 +444,10 @@ test_that("Dots (...) detect new arguments", {
 # -------------------------------------------------------- #
 
 test_that("Cache persists across separate R sessions (Disk Persistence)", {
+  skip_on_cran()
   skip_if_not_installed("callr")
-  skip_if_not_installed("pkgload") 
+  skip_if_not_installed("pkgload")
+  skip_if(!file.exists("../../DESCRIPTION"), "Not in package source tree")
   
   cache_dir <- file.path(tempdir(), "cache_cross_session")
   unlink(cache_dir, recursive = TRUE, force = TRUE)

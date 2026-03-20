@@ -6,6 +6,14 @@
 \usage{
 track_file(path, cache_dir = NULL)
 }
+\arguments{
+\item{path}{Character path to the file or directory to track.}
+
+\item{cache_dir}{Optional cache directory (unused; reserved for future use).}
+}
+\value{
+The normalised path (invisibly).
+}
 \description{
 Explicitly Track a File Dependency
 }

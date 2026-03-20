@@ -17,6 +17,41 @@ cacheFile(
   depends_on_vars = NULL
 )
 }
+\arguments{
+\item{cache_dir}{Character path to the cache directory.
+Defaults to \code{cacheR_default_dir()}.}
+
+\item{backend}{Character string selecting the serialization backend,
+either \code{"rds"} or \code{"qs2"}.}
+
+\item{ignore_args}{Character vector of argument names to exclude from
+the cache key.}
+
+\item{file_pattern}{Optional regex pattern used to filter files when
+hashing directory contents.}
+
+\item{env_vars}{Character vector of environment variable names to include
+in the cache key.}
+
+\item{hash_file_paths}{Logical; if \code{TRUE} (default), file path arguments
+are normalised and their content hashed as part of the cache key.}
+
+\item{algo}{Character string specifying the hashing algorithm passed to
+\code{\link[digest]{digest}}. Default \code{"xxhash64"}.}
+
+\item{version}{Optional version tag appended to the cache key so that
+cached results can be manually invalidated.}
+
+\item{depends_on_files}{Character vector of file paths whose content
+should be included in the cache key.}
+
+\item{depends_on_vars}{Character vector of global variable names whose
+values should be included in the cache key.}
+}
+\value{
+A decorator function suitable for use with \code{\%@\%}.
+}
 \description{
-Create a caching decorator
+Returns a decorator (for use with \code{\%@\%}) that wraps a function with
+disk-backed memoization.
 }

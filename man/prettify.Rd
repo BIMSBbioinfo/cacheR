@@ -6,6 +6,16 @@
 \usage{
 prettify(f, original, decorator_calls)
 }
+\arguments{
+\item{f}{The wrapped function.}
+
+\item{original}{The original unwrapped function.}
+
+\item{decorator_calls}{List of decorator call expressions.}
+}
+\value{
+The function \code{f} with class \code{"decorated"} and metadata attributes.
+}
 \description{
 Attach pretty metadata to a decorated function.
 }

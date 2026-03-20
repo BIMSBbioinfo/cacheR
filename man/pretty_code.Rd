@@ -6,6 +6,12 @@
 \usage{
 pretty_code(f)
 }
+\arguments{
+\item{f}{A decorated function.}
+}
+\value{
+The source reference or body of the function.
+}
 \description{
 Get a "pretty" code representation for a function.
 }

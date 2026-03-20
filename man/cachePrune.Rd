@@ -6,6 +6,16 @@
 \usage{
 cachePrune(cache_dir, days_old = 30)
 }
+\arguments{
+\item{cache_dir}{Character path to the cache directory to prune.}
+
+\item{days_old}{Numeric; cache files with modification times older than
+this many days are deleted. Default \code{30}.}
+}
+\value{
+Invisible \code{NULL}.
+}
 \description{
-Prune old cache files
+Removes cached result files older than a given number of days and cleans
+up stale lock, temp, and computing sentinel files.
 }

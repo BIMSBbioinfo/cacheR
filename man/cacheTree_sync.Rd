@@ -6,6 +6,12 @@
 \usage{
 cacheTree_sync(cache_dir)
 }
+\arguments{
+\item{cache_dir}{Character path to the cache directory containing \code{graph.rds}.}
+}
+\value{
+Invisible \code{NULL}.
+}
 \description{
 Load graph from disk into memory
 }

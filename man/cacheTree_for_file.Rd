@@ -6,6 +6,12 @@
 \usage{
 cacheTree_for_file(path)
 }
+\arguments{
+\item{path}{Character path to the file to look up.}
+}
+\value{
+A list of nodes that reference the given file.
+}
 \description{
 Find nodes associated with a specific file path
 }

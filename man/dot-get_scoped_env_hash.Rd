@@ -4,7 +4,7 @@
 \alias{.get_scoped_env_hash}
 \title{Helper: Hash ONLY the globals used by the function (Scope Isolation)}
 \usage{
-.get_scoped_env_hash(fun)
+.get_scoped_env_hash(fun, .visited = NULL)
 }
 \description{
 Helper: Hash ONLY the globals used by the function (Scope Isolation)
