@@ -1,11 +1,11 @@
 
 <!-- README.md is generated from README.Rmd. Please edit README.Rmd only. -->
 
-# cacheR <img src="https://img.shields.io/badge/status-experimental-orange" align="right"/> <a href="http://bioinformatics.mdc-berlin.de/cacheR/"><img src="https://img.shields.io/badge/docs-pkgdown-blue" align="right"/></a>
+# cacheR <img src="https://img.shields.io/badge/status-stable-green" align="right"/> <a href="http://bioinformatics.mdc-berlin.de/cacheR/"><img src="https://img.shields.io/badge/docs-pkgdown-blue" align="right"/></a>
 
 **cacheR** tracks your data and code so you don't have to
 
-Also available as a Python package: [pycacher](https://github.com/BIMSBbioinfo/pycacher) (`pip install pycacher`)
+Also available as a Python package: [pycacheR](https://github.com/BIMSBbioinfo/pycacheR) (`pip install pycacheR`)
 
 ## What does cacheR do?
 
