@@ -31,12 +31,16 @@ It's like snakemake/nextflow, but on the fly
 
 ---
 
-### 🚀 Installation
+### Installation
 
 ```r
-# install from GitHub
-# requires: remotes::install_github()
+# From GitHub
 remotes::install_github("BIMSBbioinfo/cacheR")
+```
+
+```bash
+# From Guix
+guix install -f https://raw.githubusercontent.com/BIMSBbioinfo/cacheR/main/guix.scm
 ```
 
 ### Basic usage 
