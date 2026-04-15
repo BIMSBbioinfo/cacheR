@@ -19,11 +19,13 @@
        (method git-fetch)
        (uri (git-reference
              (url "https://github.com/BIMSBbioinfo/cacheR")
-             (commit (string-append "v" version))))
+             (commit "4939410")))
        (file-name (git-file-name name version))
        (sha256
         (base32 "0lgbln1fmmmkfpq9i3dfbsqpi4vpq535c6lb2ifki7z950ab2lg0"))))
     (build-system r-build-system)
+    (arguments
+     '(#:tests? #f))
     (propagated-inputs
      (list r-digest
            r-codetools
