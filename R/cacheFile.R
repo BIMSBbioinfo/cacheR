@@ -845,16 +845,66 @@ track_file <- function(path, cache_dir = NULL) {
   return(eval_values)
 }
 
+#' Helper: locate the environment that binds `var`, walking up from `env`.
+#' Returns NULL if not found before the empty env.
+#' @keywords internal
+.find_binding_env <- function(var, env) {
+  while (!identical(env, emptyenv())) {
+    if (exists(var, envir = env, inherits = FALSE)) return(env)
+    env <- parent.env(env)
+  }
+  NULL
+}
+
+#' Helper: is `env` "user-controlled" (globalenv or a non-package env)?
+#' Package namespaces, imports, and base have a non-empty `environmentName()`
+#' other than "R_GlobalEnv". User-defined envs return "".
+#' @keywords internal
+.is_user_env <- function(env) {
+  if (is.null(env)) return(FALSE)
+  nm <- environmentName(env)
+  identical(nm, "R_GlobalEnv") || !nzchar(nm)
+}
+
+#' Helper: stable, srcref-free representation of a function for hashing.
+#' `digest::digest()` serializes attributes — including `srcref`, which
+#' references a `srcfile` env whose `parseData` slot mutates across the
+#' session. `removeSource()` + `deparse()` collapses to a stable string.
+#' @keywords internal
+.canon_fn_repr <- function(fn) {
+  fn <- tryCatch(removeSource(fn), error = function(e) fn)
+  body_txt   <- paste(deparse(body(fn), control = c("keepNA", "keepInteger")), collapse = "\n")
+  formal_txt <- vapply(formals(fn), function(x) {
+    paste(deparse(x, control = c("keepNA", "keepInteger")), collapse = "\n")
+  }, character(1))
+  list(body = body_txt, formals = formal_txt)
+}
+
 #' Helper: Hash ONLY the globals used by the function (Scope Isolation)
+#'
+#' Walks the function's free variables (via `codetools::findGlobals`).
+#' For each free variable that resolves to a *user-controlled* binding
+#' (globalenv or a non-package env), the value is included in the hash:
+#'
+#' * Functions are canonicalised with [.canon_fn_repr] (srcref stripped)
+#'   and recursed into.
+#' * Non-function values are captured by value.
+#'
+#' Bindings that resolve into a package namespace via `inherits = TRUE`
+#' are *not* captured — their internal state (S4 dispatch tables,
+#' package-private caches, `parseData` envs) is session-mutable and
+#' caused historical env-hash drift. Declare such dependencies
+#' explicitly via `depends_on_vars` / `depends_on_files`.
+#'
 #' @keywords internal
 .get_scoped_env_hash <- function(fun, .visited = NULL) {
   if (!requireNamespace("codetools", quietly = TRUE)) {
-    return(digest::digest(environment(fun)))
+    return(digest::digest(.canon_fn_repr(fun)))
   }
 
-  # Cycle detection: track visited function identities
-  fun_id <- paste(capture.output(print.default(fun)), collapse = "\n")
-  fun_id <- digest::digest(fun_id, algo = "xxhash64")
+  # Cycle detection: key on canonical form, not print.default() (which
+  # embeds the closure's env address).
+  fun_id <- digest::digest(.canon_fn_repr(fun), algo = "xxhash64")
   if (fun_id %in% .visited) return("CYCLE")
   .visited <- c(.visited, fun_id)
 
@@ -864,28 +914,31 @@ track_file <- function(path, cache_dir = NULL) {
   captured_globals <- list()
 
   for (var in used_names) {
-    if (exists(var, envir = env, inherits = TRUE)) {
-      val <- tryCatch(get(var, envir = env, inherits = TRUE), error = function(e) NULL)
-      if (is.null(val)) next
-      if (is.function(val)) {
-        fun_env <- environment(val)
-        if (is.null(fun_env)) next  # primitive — skip
-        pkg_name <- environmentName(fun_env)
-        if (nzchar(pkg_name) && pkg_name != "" && pkg_name != "R_GlobalEnv") {
-          next
-        }
-        captured_globals[[var]] <- tryCatch(
-          list(
-            body = body(val),
-            formals = formals(val),
-            env_hash = .get_scoped_env_hash(val, .visited = .visited)
-          ),
-          error = function(e) digest::digest(deparse(body(val)))
-        )
-      } else {
-        captured_globals[[var]] <- val
-      }
+    binding_env <- .find_binding_env(var, env)
+    if (is.null(binding_env)) next
+    val <- tryCatch(get(var, envir = binding_env, inherits = FALSE),
+                    error = function(e) NULL)
+    if (is.null(val)) next
+
+    if (is.function(val)) {
+      fun_env <- environment(val)
+      if (is.null(fun_env)) next  # primitive — skip
+      if (!.is_user_env(fun_env)) next  # package function — boundary
+      captured_globals[[var]] <- tryCatch(
+        c(.canon_fn_repr(val),
+          list(env_hash = .get_scoped_env_hash(val, .visited = .visited))),
+        error = function(e) digest::digest(.canon_fn_repr(val))
+      )
+    } else {
+      # Only capture non-function values bound in user-controlled envs.
+      # Package-namespace bindings are skipped — see roxygen above.
+      if (!.is_user_env(binding_env)) next
+      captured_globals[[var]] <- val
     }
+  }
+  # Sort by name so iteration order from findGlobals() doesn't perturb the hash.
+  if (length(captured_globals) > 0) {
+    captured_globals <- captured_globals[order(names(captured_globals))]
   }
   return(digest::digest(captured_globals))
 }
