@@ -14,7 +14,8 @@ cacheFile(
   algo = "xxhash64",
   version = NULL,
   depends_on_files = NULL,
-  depends_on_vars = NULL
+  depends_on_vars = NULL,
+  track_env = getOption("cacheR.track_env", TRUE)
 )
 }
 \arguments{
@@ -47,6 +48,16 @@ should be included in the cache key.}
 
 \item{depends_on_vars}{Character vector of global variable names whose
 values should be included in the cache key.}
+
+\item{track_env}{Logical; if \code{TRUE} (default), recursively hash the
+user-defined helper functions and globals reachable from \code{f} via
+\code{.get_scoped_env_hash()}. Set to \code{FALSE} to disable the scoped-env
+walk entirely — the cache key then depends only on the wrapped function's
+body, arguments, packages, and explicit dependencies. Useful for
+orchestrator functions with deep dependency trees where the recursive
+walk is slow or where you prefer to declare deps explicitly via
+\code{depends_on_files} / \code{depends_on_vars}. Overridable session-wide
+with \code{options(cacheR.track_env = FALSE)}.}
 }
 \value{
 A decorator function suitable for use with \code{\%@\%}.

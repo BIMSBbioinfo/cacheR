@@ -1031,6 +1031,15 @@ cacheR_default_dir <- function() {
 #'   should be included in the cache key.
 #' @param depends_on_vars Character vector of global variable names whose
 #'   values should be included in the cache key.
+#' @param track_env Logical; if \code{TRUE} (default), recursively hash the
+#'   user-defined helper functions and globals reachable from \code{f} via
+#'   [.get_scoped_env_hash()]. Set to \code{FALSE} to disable the scoped-env
+#'   walk entirely — the cache key then depends only on the wrapped function's
+#'   body, arguments, packages, and explicit dependencies. Useful for
+#'   orchestrator functions with deep dependency trees where the recursive
+#'   walk is slow or where you prefer to declare deps explicitly via
+#'   \code{depends_on_files} / \code{depends_on_vars}. Overridable session-wide
+#'   with \code{options(cacheR.track_env = FALSE)}.
 #' @return A decorator function suitable for use with \code{\%@\%}.
 #' @export
 cacheFile <- function(cache_dir       = NULL,
@@ -1042,7 +1051,8 @@ cacheFile <- function(cache_dir       = NULL,
                       algo            = "xxhash64",
                       version         = NULL,
                       depends_on_files = NULL,
-                      depends_on_vars  = NULL) decorator %@% function(f) {
+                      depends_on_vars  = NULL,
+                      track_env       = getOption("cacheR.track_env", TRUE)) decorator %@% function(f) {
 
   force(f)
     if (is.null(cache_dir)) cache_dir <- cacheR_default_dir()
@@ -1097,7 +1107,7 @@ cacheFile <- function(cache_dir       = NULL,
       input_hash <- .hash_inputs(input_values, hash_file_paths, file_pattern, algo)
       
       # --- 2. STATIC ANALYSIS (ENVIRONMENT & OPS) ---
-      env_hash <- .get_scoped_env_hash(f)
+      env_hash <- if (isTRUE(track_env)) .get_scoped_env_hash(f) else "DISABLED"
       
       pkg_versions <- .get_pkg_versions(ast_deps$pkgs)
       current_envs <- if (!is.null(env_vars)) as.list(Sys.getenv(sort(env_vars), unset = NA)) else NULL
