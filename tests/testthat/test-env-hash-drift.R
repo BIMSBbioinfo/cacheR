@@ -133,7 +133,8 @@ test_that("End-to-end: deep dep tree yields exactly one cache file across calls"
 
   expect_identical(r1, r2)
 
-  files <- list.files(cache_dir, pattern = "\\.rds$")
+  # Match both backends — .onLoad picks qs2 when installed, otherwise rds.
+  files <- list.files(cache_dir, pattern = "\\.(rds|qs2)$")
   result_files <- files[!grepl("(graph|computing|lock|tmp)", files)]
   expect_length(result_files, 1)
 })
@@ -200,7 +201,8 @@ test_that("track_env = FALSE skips the recursive scoped-env walk", {
   r2 <- cached_f()
   expect_equal(r2, 2)  # stale by design
 
-  files <- list.files(cache_dir, pattern = "\\.rds$")
+  # Match both backends — .onLoad picks qs2 when installed, otherwise rds.
+  files <- list.files(cache_dir, pattern = "\\.(rds|qs2)$")
   result_files <- files[!grepl("(graph|computing|lock|tmp)", files)]
   expect_length(result_files, 1)
 })
